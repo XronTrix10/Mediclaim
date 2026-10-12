@@ -1,4 +1,3 @@
-# Mediclame
 # Mediclaim
 
 ## About
