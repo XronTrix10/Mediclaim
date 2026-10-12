@@ -27,7 +27,7 @@ Currently in the planning and initial development phase.
 ## Directory structure:
 
 ```
-mediclame/
+mediclaim/
 ├── docker-compose.yml          # postgres, redis, minio, (later: keycloak, opa, vault)
 ├── .env.example
 ├── Makefile                    # shortcuts: make up, make test, make migrate
