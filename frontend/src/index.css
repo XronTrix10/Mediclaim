@@ -1,111 +1,50 @@
-:root {
-  --text: #6b6375;
-  --text-h: #08060d;
-  --bg: #fff;
-  --border: #e5e4e7;
-  --code-bg: #f4f3ec;
-  --accent: #aa3bff;
-  --accent-bg: rgba(170, 59, 255, 0.1);
-  --accent-border: rgba(170, 59, 255, 0.5);
-  --social-bg: rgba(244, 243, 236, 0.5);
-  --shadow:
-    rgba(0, 0, 0, 0.1) 0 10px 15px -3px, rgba(0, 0, 0, 0.05) 0 4px 6px -2px;
+@import 'tailwindcss';
 
-  --sans: system-ui, 'Segoe UI', Roboto, sans-serif;
-  --heading: system-ui, 'Segoe UI', Roboto, sans-serif;
-  --mono: ui-monospace, Consolas, monospace;
+@theme static {
+  --font-sans: 'Figtree', system-ui, -apple-system, 'Segoe UI', sans-serif;
+  --font-display: 'Newsreader', Georgia, 'Times New Roman', serif;
 
-  font: 18px/145% var(--sans);
-  letter-spacing: 0.18px;
-  color-scheme: light dark;
-  color: var(--text);
-  background: var(--bg);
-  font-synthesis: none;
-  text-rendering: optimizeLegibility;
-  -webkit-font-smoothing: antialiased;
-  -moz-osx-font-smoothing: grayscale;
+  --color-mist: #f5f8f9;
+  --color-mist-2: #eaf1f3;
+  --color-line: #e1eaed;
+  --color-line-strong: #ccdae0;
+  --color-ink: #17303a;
+  --color-ink-soft: #3f5963;
+  --color-ink-faint: #5e7882;
+  --color-brand: #245e6b;
+  --color-brand-deep: #1a4752;
+  --color-brand-tint: #e3f0f2;
 
-  @media (max-width: 1024px) {
-    font-size: 16px;
-  }
+  --color-allergy: #c8646a;
+  --color-allergy-tint: #f9e8e9;
+  --color-allergy-ink: #8f3a41;
+  --color-condition: #7567b3;
+  --color-condition-tint: #ece9f7;
+  --color-condition-ink: #4f4390;
+  --color-medication: #4a8db0;
+  --color-medication-tint: #e2eff6;
+  --color-medication-ink: #27607f;
+  --color-vaccination: #5b9072;
+  --color-vaccination-tint: #e4f1e9;
+  --color-vaccination-ink: #33634a;
+  --color-report: #b58a45;
+  --color-report-tint: #f5eddc;
+  --color-report-ink: #7a5719;
+
+  --shadow-soft: 0 1px 2px rgb(23 48 58 / 0.04), 0 12px 32px -16px rgb(23 48 58 / 0.14);
 }
 
-@media (prefers-color-scheme: dark) {
-  :root {
-    --text: #9ca3af;
-    --text-h: #f3f4f6;
-    --bg: #16171d;
-    --border: #2e303a;
-    --code-bg: #1f2028;
-    --accent: #c084fc;
-    --accent-bg: rgba(192, 132, 252, 0.15);
-    --accent-border: rgba(192, 132, 252, 0.5);
-    --social-bg: rgba(47, 48, 58, 0.5);
-    --shadow:
-      rgba(0, 0, 0, 0.4) 0 10px 15px -3px, rgba(0, 0, 0, 0.25) 0 4px 6px -2px;
-  }
-
-  #social .button-icon {
-    filter: invert(1) brightness(2);
-  }
+@layer base {
+  html { scroll-behavior: smooth; }
+  body { @apply bg-white font-sans text-ink antialiased; }
+  h1, h2, h3, h4 { @apply font-display font-medium leading-[1.15] tracking-[-0.012em]; }
+  button { cursor: pointer; }
+  :focus-visible { @apply rounded-lg outline-3 outline-offset-2 outline-brand/45; }
 }
 
-#root {
-  width: 1126px;
-  max-width: 100%;
-  margin: 0 auto;
-  text-align: center;
-  border-inline: 1px solid var(--border);
-  min-height: 100svh;
-  display: flex;
-  flex-direction: column;
-  box-sizing: border-box;
-}
-
-body {
-  margin: 0;
-}
-
-h1,
-h2 {
-  font-family: var(--heading);
-  font-weight: 500;
-  color: var(--text-h);
-}
-
-h1 {
-  font-size: 56px;
-  letter-spacing: -1.68px;
-  margin: 32px 0;
-  @media (max-width: 1024px) {
-    font-size: 36px;
-    margin: 20px 0;
-  }
-}
-h2 {
-  font-size: 24px;
-  line-height: 118%;
-  letter-spacing: -0.24px;
-  margin: 0 0 8px;
-  @media (max-width: 1024px) {
-    font-size: 20px;
-  }
-}
-p {
-  margin: 0;
-}
-
-code,
-.counter {
-  font-family: var(--mono);
-  display: inline-flex;
-  border-radius: 4px;
-  color: var(--text-h);
-}
-
-code {
-  font-size: 15px;
-  line-height: 135%;
-  padding: 4px 8px;
-  background: var(--code-bg);
-}
+/* Record-type colours: any element with data-kind exposes --k, --kt and --ki. */
+[data-kind='allergy'] { --k: var(--color-allergy); --kt: var(--color-allergy-tint); --ki: var(--color-allergy-ink); }
+[data-kind='condition'] { --k: var(--color-condition); --kt: var(--color-condition-tint); --ki: var(--color-condition-ink); }
+[data-kind='medication'] { --k: var(--color-medication); --kt: var(--color-medication-tint); --ki: var(--color-medication-ink); }
+[data-kind='vaccination'] { --k: var(--color-vaccination); --kt: var(--color-vaccination-tint); --ki: var(--color-vaccination-ink); }
+[data-kind='report'] { --k: var(--color-report); --kt: var(--color-report-tint); --ki: var(--color-report-ink); }
