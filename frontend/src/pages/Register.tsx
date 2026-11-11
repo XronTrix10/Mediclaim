@@ -35,7 +35,7 @@ export default function Register() {
             <input id="phone" type="tel" className={input} autoComplete="tel" placeholder="+91" required />
           </Field>
         </div>
-        <Field label="Mediclame ID" htmlFor="mid" hint="The 12-digit ID issued to you.">
+        <Field label="Mediclaim ID" htmlFor="mid" hint="The 12-digit ID issued to you.">
           <input id="mid" className={input} inputMode="numeric" placeholder="0000 0000 0000" required />
         </Field>
         <Field label="Password" htmlFor="new-password" hint="At least 10 characters.">

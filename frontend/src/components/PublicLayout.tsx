@@ -7,7 +7,7 @@ export default function PublicLayout() {
     <div>
       <header className="sticky top-0 z-20 border-b border-line bg-white/90 backdrop-blur-md">
         <div className={`${wrap} flex h-18 items-center justify-between gap-6`}>
-          <Link to="/" aria-label="Mediclame home">
+          <Link to="/" aria-label="Mediclaim home">
             <Logo />
           </Link>
           <nav className="hidden gap-[30px] text-[0.95rem] font-medium text-ink-soft md:flex" aria-label="Main">

@@ -16,15 +16,15 @@ export default function Login() {
   return (
     <AuthShell
       title="Welcome back"
-      subtitle="Sign in with your Mediclame ID."
+      subtitle="Sign in with your Mediclaim ID."
       footer={
         <>
-          New to Mediclame? <Link to="/register">Create an account</Link>
+          New to Mediclaim? <Link to="/register">Create an account</Link>
         </>
       }
     >
       <form className="mt-7 grid gap-4.5" onSubmit={onSubmit}>
-        <Field label="Mediclame ID" htmlFor="id">
+        <Field label="Mediclaim ID" htmlFor="id">
           <input
             id="id"
             className={input}

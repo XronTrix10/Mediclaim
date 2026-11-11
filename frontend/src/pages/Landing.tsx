@@ -11,7 +11,7 @@ const heroPoints: { icon: IconName; text: string }[] = [
 ]
 
 const steps = [
-  { title: 'A doctor asks', body: 'They request access using your Mediclame ID.' },
+  { title: 'A doctor asks', body: 'They request access using your Mediclaim ID.' },
   { title: 'You decide', body: 'Approve the request and choose which records they can see.' },
   { title: 'They see only that', body: 'Your doctor gets the relevant records, not your full history.' },
   { title: 'Access ends', body: 'It closes on its own after the time you set, and the visit is logged.' },
@@ -57,7 +57,7 @@ export default function Landing() {
             Your whole health story, in one calm place.
           </h1>
           <p className={lead}>
-            Mediclame keeps every record, medicine and vaccination from birth in a private timeline. You choose which
+            Mediclaim keeps every record, medicine and vaccination from birth in a private timeline. You choose which
             doctor sees what, and for how long.
           </p>
           <div className="mt-8 mb-9 flex flex-wrap gap-3">
@@ -199,7 +199,7 @@ export default function Landing() {
         <div className="flex flex-col items-start justify-between gap-8 rounded-[2.25rem] bg-brand-tint px-7 py-9 md:flex-row md:items-center md:px-14 md:py-13">
           <div>
             <h2 className="mb-2 text-[clamp(1.8rem,3vw,2.4rem)]">Start your timeline today</h2>
-            <p className={lead}>Create an account with your Mediclame ID and your mobile number.</p>
+            <p className={lead}>Create an account with your Mediclaim ID and your mobile number.</p>
           </div>
           <Link className={`${button('primary', 'lg')} shrink-0`} to="/register">
             Create your account

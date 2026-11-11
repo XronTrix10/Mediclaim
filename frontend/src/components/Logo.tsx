@@ -14,7 +14,7 @@ export default function Logo({ size = 34 }: { size?: number }) {
         <circle cx="28" cy="11" r="2.6" fill="#fff" />
         <circle cx="12" cy="11" r="2.6" fill="#fff" />
       </svg>
-      <span className="font-display text-[1.45rem] font-medium tracking-tight">Mediclame</span>
+      <span className="font-display text-[1.45rem] font-medium tracking-tight">Mediclaim</span>
     </span>
   )
 }
