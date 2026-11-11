@@ -28,21 +28,13 @@ Open http://localhost:8000/docs.
 
 ## Run with Docker
 
-Set a secret first:
+The root `docker-compose.yml` runs `postgres`, `backend`, and `frontend` together.
 
-```bash
-# macOS/Linux
-export JWT_SECRET="$(python -c 'import secrets; print(secrets.token_urlsafe(48))')"
-
-# PowerShell
-$env:JWT_SECRET = [Convert]::ToBase64String((1..48 | ForEach-Object { Get-Random -Maximum 256 }))
-```
-
-Build and start:
+From the project root:
 
 ```bash
 docker compose up --build -d
-docker compose logs -f mediclaim-auth
+docker compose logs -f backend
 ```
 
 Stop:
@@ -51,7 +43,7 @@ Stop:
 docker compose down
 ```
 
-The SQLite database is stored in the named Docker volume `mediclaim_auth_data`, so it survives container replacement. `docker compose down -v` deletes that database volume.
+The PostgreSQL database is hosted in the `postgres` container with persistent data in the `postgres_data` volume. `docker compose down -v` deletes all database volumes.
 
 ## Test the flow
 
@@ -72,7 +64,7 @@ curl -X POST http://localhost:8000/api/v1/auth/register \
 The development OTP and generated Mediclaim ID are printed in container logs:
 
 ```bash
-docker compose logs mediclaim-auth
+docker compose logs backend
 ```
 
 The OTP is six digits. It expires after 300 seconds.
@@ -103,7 +95,7 @@ curl -X POST http://localhost:8000/api/v1/auth/login \
 2. The supplied contract does not define an SMS vendor or Aadhaar authentication provider. This project generates a phone OTP and prints it only in development mode. It does **not** perform Aadhaar identity verification and must not be represented as doing so. Integrate an authorized provider before production.
 3. `OTP_DEBUG=true` is a development-only adapter. Do not deploy with it enabled. A real SMS adapter must dispatch the OTP before the API reports `otpSent: true`.
 4. Aadhaar is stored as plaintext in this starter implementation solely to support the specified duplicate check and linkage. That is not suitable for production. Minimize retention; use a lawful authorized verification flow, encryption/tokenization, strict access controls, and a reviewed retention policy.
-5. SQLite is suitable for local development/demo use. For production and concurrent registration, use PostgreSQL and database migrations. Add rate limiting, audit logging, key rotation, monitoring, HTTPS, and security review.
+5. PostgreSQL is used for persistence and data integrity across users, clinical records, patient profiles, and access grants. Add rate limiting, audit logging, key rotation, monitoring, HTTPS, and security review.
 6. JWT signing secret must be a strong secret supplied through the environment. Never commit it.
 7. `adminVerified` remains `false`; this API does not implement an admin verification workflow.
 

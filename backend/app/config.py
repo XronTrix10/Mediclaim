@@ -1,7 +1,9 @@
 import os
-from pathlib import Path
 
-DATABASE_PATH = os.getenv("DATABASE_PATH", "/data/mediclaim.db")
+DATABASE_URL = os.getenv(
+    "DATABASE_URL",
+    "postgresql://mediclaim:mediclaim_secret_password@localhost:5432/mediclaim"
+)
 JWT_SECRET = os.getenv("JWT_SECRET", "CHANGE_THIS_DEVELOPMENT_SECRET_BEFORE_DEPLOYMENT")
 JWT_ALGORITHM = "HS256"
 ACCESS_TOKEN_SECONDS = 24 * 60 * 60
