@@ -1,9 +1,33 @@
 // Static, synthetic data for the first UI pass.
 // Replace with typed API calls (src/api/) once the FastAPI backend is up.
 import type { IconName } from '../components/Icon'
+import type {
+  Kind,
+  AllergySeverity,
+  AllergyRecord,
+  HealthEvent,
+  PatientProfile,
+  PrescriptionRecord,
+  AccessGrant,
+  AccessRequest,
+  Caregiver,
+  AuditLogEntry,
+} from '../types'
 
-export type Kind = 'allergy' | 'condition' | 'medication' | 'vaccination' | 'report'
-export type Severity = 'mild' | 'moderate' | 'severe'
+export type {
+  Kind,
+  AllergySeverity,
+  AllergyRecord,
+  HealthEvent,
+  PatientProfile,
+  PrescriptionRecord,
+  AccessGrant,
+  AccessRequest,
+  Caregiver,
+  AuditLogEntry,
+}
+
+export type Severity = AllergySeverity
 
 export const kindOrder: Kind[] = ['allergy', 'condition', 'medication', 'vaccination', 'report']
 
@@ -15,27 +39,104 @@ export const kinds: Record<Kind, { label: string; plural: string; icon: IconName
   report: { label: 'Report', plural: 'Reports', icon: 'flask' },
 }
 
+  export const initialPatientProfile: PatientProfile = {
+    id: 'pat-001',
+    userId: 'usr-001',
+    mediclaimId: '4821 9306 1175',
+    aadhaarMasked: 'XXXX-XXXX-8921',
+    fullName: 'Ananya Rao',
+    firstName: 'Ananya',
+    dateOfBirth: '1994-05-12',
+    gender: 'Female',
+    bloodGroup: 'O+',
+    phone: '+91 98765 43210',
+    address: 'Flat 402, Sea View Apartments, Shivaji Park, Mumbai, Maharashtra – 400028',
+    emergencyContact: {
+      name: 'Lakshmi Rao',
+      phone: '+91 98765 12345',
+      relation: 'Mother',
+    },
+    isProfileComplete: true,
+    createdAt: '2024-01-10T08:00:00Z',
+    updatedAt: '2026-09-02T10:30:00Z',
+  }
+
 export const patient = {
-  name: 'Ananya Rao',
-  firstName: 'Ananya',
-  mediclaimId: '4821 9306 1175',
-  dob: '1994-05-12',
+  name: initialPatientProfile.fullName,
+  firstName: initialPatientProfile.firstName,
+  mediclaimId: initialPatientProfile.mediclaimId,
+  dob: initialPatientProfile.dateOfBirth,
+  gender: initialPatientProfile.gender,
+  bloodGroup: initialPatientProfile.bloodGroup,
+  phone: initialPatientProfile.phone,
+  address: initialPatientProfile.address,
 }
 
-export interface HealthEvent {
-  id: string
-  kind: Kind
-  title: string
-  /** Short label used inside the graph */
-  short?: string
-  detail: string
-  date: string
-  provider: string
-  status?: 'active' | 'resolved'
-  /** Allergy-specific */
-  severity?: Severity
-  reaction?: string
-}
+export const initialAllergies: AllergyRecord[] = [
+  {
+    id: 'alg-01',
+    kind: 'allergy',
+    title: 'Penicillin',
+    allergen: 'Penicillin-G & Amoxicillin',
+    category: 'medication',
+    severity: 'severe',
+    criticality: 'high',
+    reaction: 'Generalized urticaria, bronchospasm, and facial angioedema',
+    status: 'active',
+    identifiedDate: '2003-08-21',
+    provider: 'Dr. S. Nair, Family Clinic',
+    notes: 'Strictly avoid penicillin-class antibiotics and beta-lactams.',
+  },
+  {
+    id: 'alg-02',
+    kind: 'allergy',
+    title: 'Dust Mites',
+    allergen: 'Dermatophagoides pteronyssinus',
+    category: 'environment',
+    severity: 'mild',
+    criticality: 'low',
+    reaction: 'Rhinitis, morning sneezing, and mild conjunctival injection',
+    status: 'active',
+    identifiedDate: '2018-02-17',
+    provider: 'Dr. Meera Iyer, Shivaji Park Clinic',
+    notes: 'Triggered by seasonal weather changes and high-humidity rooms.',
+  },
+]
+
+export const initialPrescriptions: PrescriptionRecord[] = [
+  {
+    id: 'rx-01',
+    title: 'Asthma Maintenance Prescription',
+    doctor: 'Dr. Rohan Kulkarni',
+    organization: 'Lifeline Pulmonology Clinic',
+    date: '2026-08-14',
+    status: 'active',
+    fileType: 'pdf',
+    fileName: 'prescription_kulkarni_aug2026.pdf',
+    fileSize: '412 KB',
+    instructions: 'Take 2 puffs daily in the morning, rinse mouth with water afterwards.',
+    medications: [
+      { name: 'Budesonide Inhaler', dosage: '200 mcg', frequency: 'Twice daily', duration: '90 days' },
+      { name: 'Levocetirizine', dosage: '5 mg', frequency: 'Once daily at bedtime', duration: '30 days' },
+    ],
+  },
+  {
+    id: 'rx-02',
+    title: 'Post-Viral Recovery Consultation',
+    doctor: 'Dr. Meera Iyer',
+    organization: 'Shivaji Park Health Centre',
+    date: '2026-01-20',
+    status: 'completed',
+    fileType: 'image',
+    fileName: 'rx_dr_iyer_jan2026.jpg',
+    fileSize: '1.2 MB',
+    instructions: 'Complete full 5-day course with plenty of oral fluids.',
+    medications: [
+      { name: 'Paracetamol', dosage: '650 mg', frequency: 'SOS for fever', duration: '5 days' },
+      { name: 'Vitamin C & Zinc', dosage: '500 mg', frequency: 'Once daily', duration: '15 days' },
+    ],
+  },
+]
 
 export const events: HealthEvent[] = [
   { id: 'e01', kind: 'vaccination', title: 'Tdap booster', detail: 'Tetanus, diphtheria and pertussis booster. One dose.', date: '2026-09-02', provider: 'Dr. Meera Iyer, Shivaji Park Clinic' },
@@ -57,41 +158,25 @@ export const events: HealthEvent[] = [
   { id: 'e17', kind: 'report', title: 'Birth record', detail: 'Birth weight 3.1 kg. No complications.', date: '1994-05-12', provider: 'Government Maternity Hospital' },
 ]
 
-export interface AccessGrant {
-  id: string
-  name: string
-  role: string
-  scope: Kind[]
-  remaining: string
-}
-
 export const initialGrants: AccessGrant[] = [
   { id: 'g1', name: 'Dr. Rohan Kulkarni', role: 'Pulmonologist, Lifeline Clinic', scope: ['condition', 'medication', 'allergy'], remaining: '1 h 48 min left' },
   { id: 'g2', name: 'Dr. Meera Iyer', role: 'General physician, Shivaji Park Clinic', scope: ['allergy', 'vaccination'], remaining: '5 h 20 min left' },
 ]
 
-export interface AccessRequest {
-  id: string
-  name: string
-  role: string
-  scope: Kind[]
-  duration: string
-}
-
 export const initialRequests: AccessRequest[] = [
   { id: 'r1', name: 'Dr. Farhan Ali', role: 'Dermatologist, Skin & Care Centre', scope: ['allergy', 'medication'], duration: '2 hours' },
 ]
 
-export const caregivers = [
+export const caregivers: Caregiver[] = [
   { id: 'c1', name: 'Lakshmi Rao', relation: 'Mother', scope: 'Timeline and vaccinations', since: 'Since 14 Jan 2025' },
 ]
 
-export const accessLog = [
-  { id: 'l1', who: 'Dr. Rohan Kulkarni', what: 'viewed conditions and medicines', when: 'Today, 10:42' },
-  { id: 'l2', who: 'Dr. Meera Iyer', what: 'viewed allergies and vaccinations', when: 'Today, 09:15' },
-  { id: 'l3', who: 'Dr. Neha Shah', what: 'access ended automatically', when: '2 Sep 2026' },
-  { id: 'l4', who: 'Dr. Meera Iyer', what: 'added Tdap booster', when: '2 Sep 2026' },
-  { id: 'l5', who: 'You', what: 'uploaded a prescription', when: '28 Aug 2026' },
+export const accessLog: AuditLogEntry[] = [
+  { id: 'l1', who: 'Dr. Rohan Kulkarni', what: 'viewed conditions and medicines', when: 'Today, 10:42', action: 'view' },
+  { id: 'l2', who: 'Dr. Meera Iyer', what: 'viewed allergies and vaccinations', when: 'Today, 09:15', action: 'view' },
+  { id: 'l3', who: 'Dr. Neha Shah', what: 'access ended automatically', when: '2 Sep 2026', action: 'revoke' },
+  { id: 'l4', who: 'Dr. Meera Iyer', what: 'added Tdap booster', when: '2 Sep 2026', action: 'upload' },
+  { id: 'l5', who: 'You', what: 'uploaded a prescription', when: '28 Aug 2026', action: 'upload' },
 ]
 
 export const suggestions: { id: string; icon: IconName; title: string; body: string }[] = [

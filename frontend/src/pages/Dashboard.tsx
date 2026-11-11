@@ -1,583 +1,311 @@
-import { useRef, useState } from 'react'
+import { useState, useEffect } from 'react'
 import { Link } from 'react-router-dom'
-import Icon from '../components/Icon'
-import { KindTag } from '../components/Kind'
 import PageHeader from '../components/PageHeader'
-import { events, kinds, patient } from '../data/mock'
-import type { Kind, Severity } from '../data/mock'
-import { formatDate } from '../lib/format'
-import { avatar, button, card, cardTitle, input, select } from '../lib/ui'
+import Icon from '../components/Icon'
+import { button } from '../lib/ui'
+import {
+  StatsSummary,
+  ProfileCompletionModal,
+  PatientSummaryCard,
+  AllergiesSection,
+  PrescriptionsSection,
+  TimelineSection,
+  ActiveAccessCard,
+} from '../components/dashboard'
+import {
+  initialPatientProfile,
+  initialAllergies,
+  initialGrants,
+  events as demoEvents,
+} from '../data/mock'
+import type {
+  PatientProfile,
+  ProfileCompletionPayload,
+  PermittedPersonalDetailsUpdate,
+  AllergyRecord,
+  PrescriptionRecord,
+  HealthEvent,
+  AccessGrant,
+} from '../types'
 
-// ─── helpers ────────────────────────────────────────────────────────────────
-
-const activeOf = (kind: Kind) => events.filter((e) => e.kind === kind && e.status === 'active')
-const countOf = (kind: Kind) => events.filter((e) => e.kind === kind).length
-const allergies = events.filter((e) => e.kind === 'allergy' && e.status === 'active')
-const sortedEvents = [...events].sort((a, b) => b.date.localeCompare(a.date))
-
-function severityBadge(severity?: Severity) {
-  if (!severity) return null
-  const cls: Record<Severity, string> = {
-    mild: 'bg-vaccination-tint text-vaccination-ink',
-    moderate: 'bg-report-tint text-report-ink',
-    severe: 'bg-allergy-tint text-allergy-ink',
-  }
-  return (
-    <span className={`rounded-full px-2.5 py-0.5 text-[0.75rem] font-semibold capitalize ${cls[severity]}`}>
-      {severity}
-    </span>
-  )
-}
-
-// ─── Profile completion modal ────────────────────────────────────────────────
-
-const PROFILE_KEY = 'mediclaim_profile_complete'
-
-interface ProfileForm {
-  gender: string
-  blood_group: string
-  address: string
-  emergency_name: string
-  emergency_phone: string
-  emergency_relation: string
-}
-
-function ProfileModal({ onComplete }: { onComplete: () => void }) {
-  const [form, setForm] = useState<ProfileForm>({
-    gender: '',
-    blood_group: '',
-    address: '',
-    emergency_name: '',
-    emergency_phone: '',
-    emergency_relation: '',
-  })
-
-  const set = (k: keyof ProfileForm) => (e: React.ChangeEvent<HTMLInputElement | HTMLSelectElement | HTMLTextAreaElement>) =>
-    setForm((f) => ({ ...f, [k]: e.target.value }))
-
-  function onSubmit(e: React.FormEvent) {
-    e.preventDefault()
-    // TODO: POST /api/v1/patients/profile with form data
-    localStorage.setItem(PROFILE_KEY, 'true')
-    onComplete()
-  }
-
-  return (
-    <div
-      className="fixed inset-0 z-50 flex items-center justify-center bg-ink/50 backdrop-blur-sm p-4"
-      role="dialog"
-      aria-modal="true"
-      aria-labelledby="profile-modal-title"
-    >
-      <div className="w-full max-w-lg rounded-[28px] bg-white shadow-soft overflow-y-auto max-h-[90vh]">
-        {/* Header */}
-        <div className="px-7 pt-7 pb-5 border-b border-line">
-          <div className="mb-1 flex size-11 items-center justify-center rounded-[14px] bg-brand-tint text-brand">
-            <Icon name="user" size={22} />
-          </div>
-          <h2 id="profile-modal-title" className="mt-3 text-[1.6rem]">
-            Complete your profile
-          </h2>
-          <p className="text-[0.95rem] text-ink-soft">
-            We need a few details to set up your health record. This takes under a minute.
-          </p>
-        </div>
-
-        <form onSubmit={onSubmit} className="grid gap-5 px-7 py-6">
-          {/* Row: gender + blood group */}
-          <div className="grid grid-cols-1 gap-5 sm:grid-cols-2">
-            <div className="grid gap-1.5">
-              <label htmlFor="p-gender" className="text-sm font-semibold">
-                Gender <span className="text-allergy">*</span>
-              </label>
-              <select id="p-gender" className={select} value={form.gender} onChange={set('gender')} required>
-                <option value="" disabled>Select…</option>
-                <option>Male</option>
-                <option>Female</option>
-                <option>Non-binary</option>
-                <option>Prefer not to say</option>
-              </select>
-            </div>
-            <div className="grid gap-1.5">
-              <label htmlFor="p-blood" className="text-sm font-semibold">
-                Blood group <span className="text-allergy">*</span>
-              </label>
-              <select id="p-blood" className={select} value={form.blood_group} onChange={set('blood_group')} required>
-                <option value="" disabled>Select…</option>
-                {['A+', 'A−', 'B+', 'B−', 'AB+', 'AB−', 'O+', 'O−', 'Unknown'].map((bg) => (
-                  <option key={bg}>{bg}</option>
-                ))}
-              </select>
-            </div>
-          </div>
-
-          {/* Address */}
-          <div className="grid gap-1.5">
-            <label htmlFor="p-address" className="text-sm font-semibold">
-              Address <span className="text-allergy">*</span>
-            </label>
-            <textarea
-              id="p-address"
-              rows={2}
-              className="w-full rounded-[14px] border border-line-strong bg-white px-4 py-3 text-[0.95rem] transition placeholder:text-[#85999f] focus:border-brand focus:ring-4 focus:ring-brand/15 focus:outline-none resize-none"
-              placeholder="House/flat, street, city, state – PIN"
-              value={form.address}
-              onChange={set('address')}
-              required
-            />
-          </div>
-
-          {/* Emergency contact */}
-          <div>
-            <p className="mb-3 text-sm font-semibold text-ink">
-              Emergency contact <span className="text-allergy">*</span>
-            </p>
-            <div className="grid grid-cols-1 gap-4 sm:grid-cols-2">
-              <div className="grid gap-1.5">
-                <label htmlFor="p-ename" className="text-sm text-ink-soft">
-                  Full name
-                </label>
-                <input
-                  id="p-ename"
-                  className={input}
-                  placeholder="e.g. Lakshmi Rao"
-                  value={form.emergency_name}
-                  onChange={set('emergency_name')}
-                  required
-                />
-              </div>
-              <div className="grid gap-1.5">
-                <label htmlFor="p-ephone" className="text-sm text-ink-soft">
-                  Phone number
-                </label>
-                <input
-                  id="p-ephone"
-                  type="tel"
-                  className={input}
-                  placeholder="+91 98765 43210"
-                  value={form.emergency_phone}
-                  onChange={set('emergency_phone')}
-                  required
-                />
-              </div>
-              <div className="grid gap-1.5 sm:col-span-2">
-                <label htmlFor="p-erel" className="text-sm text-ink-soft">
-                  Relation
-                </label>
-                <select
-                  id="p-erel"
-                  className={select}
-                  value={form.emergency_relation}
-                  onChange={set('emergency_relation')}
-                  required
-                >
-                  <option value="" disabled>Select relation…</option>
-                  {['Parent', 'Spouse', 'Sibling', 'Child', 'Friend', 'Other'].map((r) => (
-                    <option key={r}>{r}</option>
-                  ))}
-                </select>
-              </div>
-            </div>
-          </div>
-
-          <button className={`${button('primary', 'lg')} w-full mt-1`} type="submit">
-            Save and continue
-          </button>
-        </form>
-      </div>
-    </div>
-  )
-}
-
-// ─── Stats strip ─────────────────────────────────────────────────────────────
-
-interface StatCardProps {
-  kind: Kind
-  value: number
-  label: string
-  note: string
-}
-
-function StatCard({ kind, value, label, note }: StatCardProps) {
-  return (
-    <div className="flex items-start gap-3 rounded-[20px] bg-(--kt) p-4" data-kind={kind}>
-      <span className="grid size-10 shrink-0 place-items-center rounded-[11px] bg-white text-(--ki)">
-        <Icon name={kinds[kind].icon} size={18} />
-      </span>
-      <div className="min-w-0">
-        <strong className="block font-display text-[1.9rem] font-medium leading-none text-(--ki)">
-          {value}
-        </strong>
-        <span className="mt-1.5 block text-[0.82rem] font-semibold leading-tight">{label}</span>
-        <small className="mt-0.5 block truncate text-[0.78rem] leading-[1.4] text-ink-soft">{note}</small>
-      </div>
-    </div>
-  )
-}
-
-// ─── Allergies section ───────────────────────────────────────────────────────
-
-function AllergiesSection() {
-  return (
-    <section className={card} aria-labelledby="allergies-h">
-      <h2 className={cardTitle} id="allergies-h">
-        Allergies &amp; sensitivities
-        <Link
-          className="font-sans text-[0.88rem] font-semibold tracking-normal text-brand hover:underline hover:underline-offset-[3px]"
-          to="/app/records?kind=allergy"
-        >
-          View all →
-        </Link>
-      </h2>
-
-      {allergies.length === 0 ? (
-        <div className="flex flex-col items-start gap-2 rounded-[14px] bg-mist px-5 py-6 text-ink-soft">
-          <Icon name="alert" size={22} className="text-ink-faint" />
-          <strong className="text-[0.95rem] font-semibold text-ink">No allergies on record</strong>
-          <p className="text-[0.88rem]">Add an allergy to keep your doctors informed.</p>
-          <button className={`${button('soft', 'sm')} mt-1`} type="button">
-            <Icon name="plus" size={15} />
-            Add allergy
-          </button>
-        </div>
-      ) : (
-        <ul className="grid gap-3">
-          {allergies.map((a) => (
-            <li
-              key={a.id}
-              data-kind="allergy"
-              className="flex items-start gap-3 rounded-[16px] border border-line bg-mist p-3.5"
-            >
-              {/* Colored dot */}
-              <span className="mt-1 size-2.5 shrink-0 rounded-full bg-(--k) ring-4 ring-(--kt)" />
-              <div className="min-w-0 flex-1">
-                <div className="flex flex-wrap items-center gap-2">
-                  <strong className="text-[0.95rem] font-semibold">{a.title}</strong>
-                  {severityBadge(a.severity)}
-                </div>
-                {a.reaction && (
-                  <p className="mt-0.5 text-[0.84rem] text-ink-soft">{a.reaction}</p>
-                )}
-                <p className="mt-1 text-[0.82rem] text-ink-faint">
-                  Since {formatDate(a.date)} · {a.provider}
-                </p>
-              </div>
-            </li>
-          ))}
-        </ul>
-      )}
-    </section>
-  )
-}
-
-// ─── Prescriptions section ───────────────────────────────────────────────────
-
-interface Prescription {
-  id: string
-  title: string
-  date: string
-  doctor: string
-  fileType: 'pdf' | 'image'
-}
-
-function PrescriptionsSection() {
-  // Starts empty; wired to real API later
-  const [prescriptions] = useState<Prescription[]>([])
-  const pdfRef = useRef<HTMLInputElement>(null)
-  const imgRef = useRef<HTMLInputElement>(null)
-
-  return (
-    <section className={card} aria-labelledby="rx-h">
-      <div className={cardTitle} id="rx-h">
-        <h2>Prescriptions</h2>
-        <button className={button('soft', 'sm')} type="button" onClick={() => pdfRef.current?.click()}>
-          <Icon name="upload" size={15} />
-          Upload
-        </button>
-      </div>
-
-      {/* Hidden file inputs */}
-      <input ref={pdfRef} type="file" accept=".pdf" className="hidden" aria-label="Upload PDF prescription" />
-      <input ref={imgRef} type="file" accept="image/*" className="hidden" aria-label="Upload image prescription" />
-
-      {prescriptions.length === 0 ? (
-        <div className="rounded-[18px] border-2 border-dashed border-line-strong px-6 py-10 text-center">
-          <span className="mx-auto mb-3 flex size-12 items-center justify-center rounded-full bg-mist text-ink-faint">
-            <Icon name="file" size={22} />
-          </span>
-          <p className="mb-1 font-semibold text-ink">No prescriptions yet</p>
-          <p className="mb-5 text-[0.88rem] text-ink-soft">
-            Upload PDF or image files from your old prescriptions.
-          </p>
-          <div className="flex flex-wrap justify-center gap-3">
-            <button
-              className={button('ghost', 'sm')}
-              type="button"
-              onClick={() => pdfRef.current?.click()}
-            >
-              <Icon name="file" size={15} />
-              Upload PDF
-            </button>
-            <button
-              className={button('ghost', 'sm')}
-              type="button"
-              onClick={() => imgRef.current?.click()}
-            >
-              <Icon name="image" size={15} />
-              Upload image
-            </button>
-          </div>
-        </div>
-      ) : (
-        <ul className="grid gap-2">
-          {prescriptions.map((rx) => (
-            <li
-              key={rx.id}
-              className="flex items-center gap-3 rounded-[14px] border border-line px-4 py-3"
-            >
-              <span className="grid size-9 shrink-0 place-items-center rounded-[10px] bg-report-tint text-report-ink">
-                <Icon name={rx.fileType === 'pdf' ? 'file' : 'image'} size={16} />
-              </span>
-              <div className="min-w-0 flex-1">
-                <strong className="block truncate text-[0.9rem] font-semibold">{rx.title}</strong>
-                <small className="text-[0.8rem] text-ink-faint">
-                  {rx.doctor} · {formatDate(rx.date)}
-                </small>
-              </div>
-              <button className={button('ghost', 'sm')} type="button">
-                View
-              </button>
-            </li>
-          ))}
-        </ul>
-      )}
-    </section>
-  )
-}
-
-// ─── Mini timeline ───────────────────────────────────────────────────────────
-
-function MiniTimeline() {
-  // Build year-grouped entries outside of render (pure computation, not state mutation)
-  const grouped = sortedEvents.reduce<{ year: string; first: boolean; event: typeof sortedEvents[number] }[]>(
-    (acc, e) => {
-      const year = e.date.slice(0, 4)
-      const isFirst = acc.length === 0 || acc[acc.length - 1].year !== year
-      acc.push({ year, first: isFirst, event: e })
-      return acc
-    },
-    [],
-  )
-
-  return (
-    <section
-      className={`${card} flex flex-col`}
-      aria-labelledby="mini-tl-h"
-      style={{ minHeight: 0 }}
-    >
-      <div className={cardTitle}>
-        <h2 id="mini-tl-h">Your timeline</h2>
-        <Link
-          className="font-sans text-[0.88rem] font-semibold tracking-normal text-brand hover:underline hover:underline-offset-[3px]"
-          to="/app/timeline"
-        >
-          Full timeline →
-        </Link>
-      </div>
-
-      {sortedEvents.length === 0 ? (
-        <div className="flex flex-col items-start gap-2 rounded-[14px] bg-mist px-5 py-8 text-ink-soft">
-          <Icon name="timeline" size={22} className="text-ink-faint" />
-          <strong className="text-[0.95rem] font-semibold text-ink">Your timeline is empty</strong>
-          <p className="text-[0.88rem]">Records you add will appear here in order.</p>
-        </div>
-      ) : (
-        <ol className="relative overflow-y-auto pr-1 -mr-1" style={{ maxHeight: 'calc(100vh - 240px)' }}>
-          {/* Vertical track */}
-          <span className="pointer-events-none absolute left-[11px] top-0 bottom-0 w-0.5 rounded-full bg-line-strong" />
-
-          {grouped.map(({ year, first, event: e }) => {
-
-            return (
-              <li key={e.id} data-kind={e.kind} className="relative pl-7">
-                {/* Year label */}
-                {first && (
-                  <div className="sticky top-0 z-10 -mx-1 mb-1 mt-3 bg-white/90 py-0.5 backdrop-blur-sm first:mt-0">
-                    <span className="font-display text-[1.05rem] text-ink-faint">{year}</span>
-                  </div>
-                )}
-
-                {/* Dot */}
-                <span className="absolute left-1.5 top-[18px] size-2.5 rounded-full border-2 border-(--k) bg-white ring-2 ring-(--kt)" />
-
-                {/* Card */}
-                <div className="mb-2 rounded-[14px] border border-line bg-mist px-3.5 py-2.5">
-                  <div className="mb-1 flex flex-wrap items-center gap-1.5">
-                    <KindTag kind={e.kind} />
-                    {e.status === 'active' && (
-                      <span className="rounded-full bg-brand-tint px-2 py-0.5 text-[0.72rem] font-semibold text-brand-deep">
-                        Active
-                      </span>
-                    )}
-                  </div>
-                  <p className="text-[0.88rem] font-semibold leading-snug text-ink">{e.title}</p>
-                  <p className="mt-0.5 text-[0.78rem] text-ink-faint">
-                    {formatDate(e.date)}
-                    {e.provider ? ` · ${e.provider.split(',')[0]}` : ''}
-                  </p>
-                </div>
-              </li>
-            )
-          })}
-        </ol>
-      )}
-    </section>
-  )
-}
-
-// ─── Dashboard ───────────────────────────────────────────────────────────────
+const PROFILE_STORAGE_KEY = 'mediclaim_profile_complete'
+const PATIENT_DATA_KEY = 'mediclaim_patient_data'
+const PRESCRIPTIONS_KEY = 'mediclaim_prescriptions'
+const ALLERGIES_KEY = 'mediclaim_allergies'
 
 export default function Dashboard() {
-  const [profileComplete, setProfileComplete] = useState(
-    () => localStorage.getItem(PROFILE_KEY) === 'true',
-  )
+  // Check if profile was already completed
+  const [isProfileComplete, setIsProfileComplete] = useState<boolean>(() => {
+    return localStorage.getItem(PROFILE_STORAGE_KEY) === 'true'
+  })
 
-  const activeAllergies = activeOf('allergy')
-  const activeMeds = activeOf('medication')
-  const activeConditions = activeOf('condition')
+  // Patient profile data
+  const [profile, setProfile] = useState<PatientProfile>(() => {
+    const saved = localStorage.getItem(PATIENT_DATA_KEY)
+    if (saved) {
+      try {
+        return JSON.parse(saved)
+      } catch {
+        // fallback
+      }
+    }
+    return {
+      ...initialPatientProfile,
+      isProfileComplete: localStorage.getItem(PROFILE_STORAGE_KEY) === 'true',
+    }
+  })
+
+  // Prescriptions: Initially empty as specified in requirements
+  const [prescriptions, setPrescriptions] = useState<PrescriptionRecord[]>(() => {
+    const saved = localStorage.getItem(PRESCRIPTIONS_KEY)
+    if (saved) {
+      try {
+        return JSON.parse(saved)
+      } catch {
+        // fallback
+      }
+    }
+    return []
+  })
+
+  // Allergies: Initial allergies list with rich medical properties
+  const [allergies, setAllergies] = useState<AllergyRecord[]>(() => {
+    const saved = localStorage.getItem(ALLERGIES_KEY)
+    if (saved) {
+      try {
+        return JSON.parse(saved)
+      } catch {
+        // fallback
+      }
+    }
+    return initialAllergies
+  })
+
+  // Timeline: Initially empty on the right as specified in requirements
+  const [timelineEvents, setTimelineEvents] = useState<HealthEvent[]>([])
+  const [isDemoTimelineLoaded, setIsDemoTimelineLoaded] = useState(false)
+
+  // Doctor access grants
+  const [grants, setGrants] = useState<AccessGrant[]>(initialGrants)
+
+  // Persist prescriptions
+  useEffect(() => {
+    localStorage.setItem(PRESCRIPTIONS_KEY, JSON.stringify(prescriptions))
+  }, [prescriptions])
+
+  // Persist allergies
+  useEffect(() => {
+    localStorage.setItem(ALLERGIES_KEY, JSON.stringify(allergies))
+  }, [allergies])
+
+  // Profile completion handler
+  const handleProfileComplete = (payload: ProfileCompletionPayload) => {
+    const updatedProfile: PatientProfile = {
+      ...profile,
+      gender: payload.gender as PatientProfile['gender'],
+      bloodGroup: payload.bloodGroup as PatientProfile['bloodGroup'],
+      address: payload.address,
+      emergencyContact: {
+        name: payload.emergencyName,
+        phone: payload.emergencyPhone,
+        relation: payload.emergencyRelation,
+      },
+      isProfileComplete: true,
+      updatedAt: new Date().toISOString(),
+    }
+
+    setProfile(updatedProfile)
+    setIsProfileComplete(true)
+    localStorage.setItem(PROFILE_STORAGE_KEY, 'true')
+    localStorage.setItem(PATIENT_DATA_KEY, JSON.stringify(updatedProfile))
+  }
+
+  // Update permitted personal details (phone, address, emergency contact)
+  const handleUpdatePermittedDetails = (update: PermittedPersonalDetailsUpdate) => {
+    const updated: PatientProfile = {
+      ...profile,
+      phone: update.phone ?? profile.phone,
+      address: update.address ?? profile.address,
+      emergencyContact: update.emergencyContact ?? profile.emergencyContact,
+      updatedAt: new Date().toISOString(),
+    }
+    setProfile(updated)
+    localStorage.setItem(PATIENT_DATA_KEY, JSON.stringify(updated))
+  }
+
+  // Prescription upload handler
+  const handleUploadPrescription = (newRx: PrescriptionRecord) => {
+    setPrescriptions((prev) => [newRx, ...prev])
+
+    // Also map to timeline event
+    const newTimelineEvent: HealthEvent = {
+      id: `ev-${newRx.id}`,
+      kind: 'medication',
+      title: newRx.title,
+      detail: `Prescribed by ${newRx.doctor}. Attached: ${newRx.fileName} (${newRx.fileSize || 'Document'})`,
+      date: newRx.date,
+      provider: newRx.doctor,
+      status: 'active',
+      fileType: newRx.fileType,
+      fileName: newRx.fileName,
+    }
+    setTimelineEvents((prev) => [newTimelineEvent, ...prev])
+  }
+
+  const handleDeletePrescription = (id: string) => {
+    setPrescriptions((prev) => prev.filter((p) => p.id !== id))
+  }
+
+  // Add allergy handler
+  const handleAddAllergy = (newAllergy: AllergyRecord) => {
+    setAllergies((prev) => [newAllergy, ...prev])
+
+    // Also map to timeline event
+    const newTimelineEvent: HealthEvent = {
+      id: `ev-${newAllergy.id}`,
+      kind: 'allergy',
+      title: `${newAllergy.allergen} Allergy`,
+      detail: `${newAllergy.reaction} (${newAllergy.severity} severity)`,
+      date: newAllergy.identifiedDate,
+      provider: newAllergy.provider,
+      status: 'active',
+      severity: newAllergy.severity,
+      reaction: newAllergy.reaction,
+    }
+    setTimelineEvents((prev) => [newTimelineEvent, ...prev])
+  }
+
+  // Toggle demo timeline events
+  const handleToggleDemoData = () => {
+    if (isDemoTimelineLoaded) {
+      setTimelineEvents([])
+      setIsDemoTimelineLoaded(false)
+    } else {
+      setTimelineEvents(demoEvents)
+      setIsDemoTimelineLoaded(true)
+    }
+  }
+
+  const handleRevokeGrant = (grantId: string) => {
+    setGrants((prev) => prev.filter((g) => g.id !== grantId))
+  }
 
   return (
     <>
-      {/* Profile completion gate */}
-      {!profileComplete && <ProfileModal onComplete={() => setProfileComplete(true)} />}
+      {/* Mandatory Profile Completion Modal on first visit */}
+      {!isProfileComplete && (
+        <ProfileCompletionModal
+          initialName={profile.firstName}
+          onComplete={handleProfileComplete}
+        />
+      )}
 
+      {/* Page Header */}
       <PageHeader
-        title={`Welcome, ${patient.firstName}`}
-        subtitle="Your health story, all in one place."
+        title={`Welcome back, ${profile.firstName}`}
+        subtitle="Lifelong Health Record Management · HL7 FHIR Standard"
       >
         <Link className={button('ghost')} to="/app/records">
           <Icon name="download" size={17} />
           Download history
         </Link>
-        <button className={button('primary')} type="button">
+        <Link className={button('primary')} to="/app/records">
           <Icon name="upload" size={17} />
           Upload record
-        </button>
+        </Link>
       </PageHeader>
 
-      {/* Profile completion nudge (after partial dismiss via dev tools) */}
-      {!profileComplete && (
-        <div className="mb-5 flex items-center gap-3 rounded-[16px] bg-brand-tint px-5 py-3.5">
-          <Icon name="user" size={18} className="shrink-0 text-brand" />
-          <p className="flex-1 text-[0.9rem] text-brand-deep">
-            Complete your profile so your records are set up correctly.
-          </p>
-        </div>
-      )}
+      {/* Main Dashboard Layout */}
+      <div className="grid grid-cols-1 gap-5">
+        {/* Patient Profile Summary Card */}
+        <PatientSummaryCard
+          profile={profile}
+          onUpdatePermittedDetails={handleUpdatePermittedDetails}
+        />
 
-      {/* Two-column layout */}
-      <div className="grid grid-cols-1 gap-5 min-[1100px]:grid-cols-[minmax(0,3fr)_minmax(0,2fr)]">
+        {/* Two Column Grid */}
+        <div className="grid grid-cols-1 items-start gap-5 min-[1080px]:grid-cols-[minmax(0,1.35fr)_minmax(0,0.95fr)]">
+          {/* Left Column: Stats, Allergies, Prescriptions, Quick Access */}
+          <div className="flex flex-col gap-5">
+            {/* Real-time stats summary */}
+            <StatsSummary events={timelineEvents.length > 0 ? timelineEvents : demoEvents} />
 
-        {/* ── LEFT COLUMN ── */}
-        <div className="grid gap-5">
-
-          {/* Stats strip */}
-          <section
-            className="grid grid-cols-2 gap-3 sm:grid-cols-4"
-            aria-label="Health summary"
-          >
-            <StatCard
-              kind="allergy"
-              value={activeAllergies.length}
-              label="Active allergies"
-              note={activeAllergies.map((a) => a.title).join(', ') || 'None recorded'}
+            {/* Prescriptions Section (time-ordered, initially empty with PDF/Image upload) */}
+            <PrescriptionsSection
+              prescriptions={prescriptions}
+              onUploadPrescription={handleUploadPrescription}
+              onDeletePrescription={handleDeletePrescription}
             />
-            <StatCard
-              kind="condition"
-              value={activeConditions.length}
-              label="Active conditions"
-              note={activeConditions.map((c) => c.title).join(', ') || 'None recorded'}
-            />
-            <StatCard
-              kind="medication"
-              value={activeMeds.length}
-              label="Current medicines"
-              note={activeMeds.map((m) => m.title.split(' ')[0]).join(', ') || 'None recorded'}
-            />
-            <StatCard
-              kind="vaccination"
-              value={countOf('vaccination')}
-              label="Vaccinations"
-              note="Total on record"
-            />
-          </section>
 
-          {/* Allergies */}
-          <AllergiesSection />
+            {/* Allergies & Related Properties Section */}
+            <AllergiesSection
+              allergies={allergies}
+              onAddAllergy={handleAddAllergy}
+            />
 
-          {/* Prescriptions */}
-          <PrescriptionsSection />
-
-          {/* Quick access */}
-          <section className="grid grid-cols-1 gap-3 sm:grid-cols-3" aria-label="Quick access">
-            {(
-              [
-                { to: '/app/timeline', icon: 'timeline', label: 'Timeline', desc: 'Your full health history' },
-                { to: '/app/records', icon: 'file', label: 'Records', desc: 'Reports & prescriptions' },
-                { to: '/app/access', icon: 'shield', label: 'Access', desc: 'Who can see your data' },
-              ] as const
-            ).map((item) => (
+            {/* Quick access tiles */}
+            <section className="grid grid-cols-1 gap-3 sm:grid-cols-3" aria-label="Quick navigation">
               <Link
-                key={item.to}
-                to={item.to}
-                className="flex items-center gap-3 rounded-[18px] border border-line bg-white px-4 py-3.5 shadow-soft transition-colors hover:border-brand hover:bg-brand-tint"
+                to="/app/timeline"
+                className="flex items-center gap-3 rounded-[20px] border border-line bg-white p-4 shadow-soft transition-all hover:-translate-y-0.5 hover:border-brand"
               >
-                <span className={`${avatar} rounded-[12px]`}>
-                  <Icon name={item.icon} size={18} />
+                <span className="grid size-10 shrink-0 place-items-center rounded-[12px] bg-brand-tint text-brand">
+                  <Icon name="timeline" size={20} />
                 </span>
                 <div>
-                  <strong className="block text-[0.9rem] font-semibold">{item.label}</strong>
-                  <small className="text-[0.8rem] text-ink-faint">{item.desc}</small>
+                  <strong className="block text-sm font-semibold text-ink">Lifelong Timeline</strong>
+                  <span className="text-xs text-ink-faint">Full interactive history</span>
                 </div>
               </Link>
-            ))}
-          </section>
-        </div>
 
-        {/* ── RIGHT COLUMN ── */}
-        <div className="flex flex-col gap-5">
-          <MiniTimeline />
-
-          {/* Active access */}
-          <section className="rounded-[26px] bg-brand-tint p-6" aria-labelledby="access-h">
-            <h2 className={`${cardTitle} !text-[1.1rem]`} id="access-h">
-              Who can see your records
               <Link
-                className="font-sans text-[0.85rem] font-semibold tracking-normal text-brand hover:underline hover:underline-offset-[3px]"
-                to="/app/access"
+                to="/app/records"
+                className="flex items-center gap-3 rounded-[20px] border border-line bg-white p-4 shadow-soft transition-all hover:-translate-y-0.5 hover:border-brand"
               >
-                Manage →
+                <span className="grid size-10 shrink-0 place-items-center rounded-[12px] bg-brand-tint text-brand">
+                  <Icon name="file" size={20} />
+                </span>
+                <div>
+                  <strong className="block text-sm font-semibold text-ink">All Records</strong>
+                  <span className="text-xs text-ink-faint">Reports, tests &amp; scans</span>
+                </div>
               </Link>
-            </h2>
-            <ul className="grid gap-2">
-              {[
-                { id: 'g1', name: 'Dr. Rohan Kulkarni', role: 'Pulmonologist', remaining: '1 h 48 min' },
-                { id: 'g2', name: 'Dr. Meera Iyer', role: 'General physician', remaining: '5 h 20 min' },
-              ].map((g) => (
-                <li key={g.id} className="flex items-center gap-3 rounded-[14px] bg-white px-3.5 py-3">
-                  <span className={avatar}>{g.name.replace(/^Dr\.\s+/, '').split(' ').map((n) => n[0]).join('').slice(0, 2).toUpperCase()}</span>
-                  <div className="min-w-0 flex-1">
-                    <strong className="block truncate text-[0.88rem] font-semibold">{g.name}</strong>
-                    <small className="text-[0.78rem] text-ink-faint">{g.role}</small>
-                  </div>
-                  <span className="inline-flex shrink-0 items-center gap-1 rounded-full bg-brand-tint px-2.5 py-1 text-[0.75rem] font-semibold text-brand-deep">
-                    <Icon name="clock" size={12} />
-                    {g.remaining}
-                  </span>
-                </li>
-              ))}
-            </ul>
-          </section>
+
+              <Link
+                to="/app/access"
+                className="flex items-center gap-3 rounded-[20px] border border-line bg-white p-4 shadow-soft transition-all hover:-translate-y-0.5 hover:border-brand"
+              >
+                <span className="grid size-10 shrink-0 place-items-center rounded-[12px] bg-brand-tint text-brand">
+                  <Icon name="shield" size={20} />
+                </span>
+                <div>
+                  <strong className="block text-sm font-semibold text-ink">Access Control</strong>
+                  <span className="text-xs text-ink-faint">Doctor consent &amp; audit log</span>
+                </div>
+              </Link>
+            </section>
+          </div>
+
+          {/* Right Column: Timeline (initially empty on right) & Active Doctor Access */}
+          <div className="flex flex-col gap-5">
+            {/* Timeline Section */}
+            <TimelineSection
+              events={timelineEvents}
+              onAddRecordClick={() => {
+                // Focus upload or trigger prescription upload
+                const btn = document.querySelector<HTMLButtonElement>('[aria-label="Upload PDF prescription"]')
+                btn?.click()
+              }}
+              onToggleDemoData={handleToggleDemoData}
+              isDemoDataLoaded={isDemoTimelineLoaded}
+            />
+
+            {/* Doctor Access & Consent Summary */}
+            <ActiveAccessCard
+              grants={grants}
+              onRevoke={handleRevokeGrant}
+            />
+          </div>
         </div>
       </div>
     </>
