@@ -1,12 +1,21 @@
 BEGIN;
 
+CREATE EXTENSION IF NOT EXISTS "pgcrypto";
+
 CREATE TABLE users (
     id uuid PRIMARY KEY DEFAULT gen_random_uuid(),
     public_id varchar(12) NOT NULL UNIQUE CHECK (public_id ~ '^[A-Za-z0-9]{12}$'),
+    mediclaim_id varchar(12) UNIQUE,
     full_name varchar(200) NOT NULL,
-    email varchar(255) NOT NULL UNIQUE,
-    phone varchar(20),
+    email varchar(255) UNIQUE,
+    phone varchar(20) NOT NULL UNIQUE,
+    aadhaar_number varchar(12) UNIQUE,
     password_hash varchar(255) NOT NULL,
+    admin_verified boolean NOT NULL DEFAULT false,
+    profile_complete boolean NOT NULL DEFAULT false,
+    otp_hash text,
+    otp_expires_at bigint,
+    otp_attempts integer NOT NULL DEFAULT 0,
     is_active boolean NOT NULL DEFAULT true,
     created_at timestamp NOT NULL DEFAULT now(),
     updated_at timestamp NOT NULL DEFAULT now()

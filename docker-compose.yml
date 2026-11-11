@@ -33,7 +33,6 @@ services:
     environment:
       JWT_SECRET: ${JWT_SECRET:-mediclaim_dev_jwt_secret_change_in_production}
       OTP_DEBUG: ${OTP_DEBUG:-true}
-      DATABASE_PATH: /data/mediclaim.db
       DATABASE_URL: postgresql://${POSTGRES_USER:-mediclaim}:${POSTGRES_PASSWORD:-mediclaim_secret_password}@postgres:5432/${POSTGRES_DB:-mediclaim}
     volumes:
       - backend_data:/data

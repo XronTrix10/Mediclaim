@@ -2,7 +2,7 @@ FROM python:3.12-slim
 
 ENV PYTHONDONTWRITEBYTECODE=1 \
     PYTHONUNBUFFERED=1 \
-    DATABASE_PATH=/data/mediclaim.db \
+    DATABASE_URL=postgresql://mediclaim:mediclaim_secret_password@postgres:5432/mediclaim \
     OTP_DEBUG=true
 
 WORKDIR /app
