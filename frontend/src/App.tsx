@@ -2,8 +2,7 @@ import { Navigate, Route, Routes } from 'react-router-dom'
 import PublicLayout from './components/PublicLayout'
 import AppLayout from './components/AppLayout'
 import Landing from './pages/Landing'
-import Login from './pages/Login'
-import Register from './pages/Register'
+import Auth from './pages/Auth'
 import Dashboard from './pages/Dashboard'
 import Timeline from './pages/Timeline'
 import Records from './pages/Records'
@@ -15,8 +14,9 @@ export default function App() {
       <Route element={<PublicLayout />}>
         <Route path="/" element={<Landing />} />
       </Route>
-      <Route path="/login" element={<Login />} />
-      <Route path="/register" element={<Register />} />
+      <Route path="/auth" element={<Auth />} />
+      <Route path="/login" element={<Navigate to="/auth" replace />} />
+      <Route path="/register" element={<Navigate to="/auth?mode=register" replace />} />
 
       {/* TODO: wrap in a route guard once auth is wired up (src/auth/) */}
       <Route path="/app" element={<AppLayout />}>

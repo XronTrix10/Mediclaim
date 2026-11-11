@@ -61,10 +61,10 @@ export default function Landing() {
             doctor sees what, and for how long.
           </p>
           <div className="mt-8 mb-9 flex flex-wrap gap-3">
-            <Link className={button('primary', 'lg')} to="/register">
+            <Link className={button('primary', 'lg')} to="/auth?mode=register">
               Create your account
             </Link>
-            <Link className={button('ghost', 'lg')} to="/login">
+            <Link className={button('ghost', 'lg')} to="/auth">
               Sign in
             </Link>
           </div>
@@ -132,7 +132,7 @@ export default function Landing() {
                 <h3>Download your history any time</h3>
                 <p>Take your records with you in a standard format, whichever doctor you see next.</p>
               </div>
-              <Link className={button('soft')} to="/register">
+              <Link className={button('soft')} to="/auth?mode=register">
                 Get started
               </Link>
             </article>
@@ -201,7 +201,7 @@ export default function Landing() {
             <h2 className="mb-2 text-[clamp(1.8rem,3vw,2.4rem)]">Start your timeline today</h2>
             <p className={lead}>Create an account with your Mediclaim ID and your mobile number.</p>
           </div>
-          <Link className={`${button('primary', 'lg')} shrink-0`} to="/register">
+          <Link className={`${button('primary', 'lg')} shrink-0`} to="/auth?mode=register">
             Create your account
           </Link>
         </div>

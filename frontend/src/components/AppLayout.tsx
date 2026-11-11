@@ -45,7 +45,7 @@ export default function AppLayout() {
           </div>
         </div>
         <Link
-          to="/login"
+          to="/auth"
           className="hidden items-center gap-2.5 rounded-[14px] px-4 py-2.5 text-[0.9rem] text-ink-faint transition-colors hover:bg-mist hover:text-ink min-[901px]:flex"
         >
           <Icon name="logout" size={18} />
