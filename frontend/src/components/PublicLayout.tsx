@@ -22,10 +22,10 @@ export default function PublicLayout() {
             </a>
           </nav>
           <div className="flex gap-2.5">
-            <Link className={`${button('ghost', 'sm')} max-sm:hidden`} to="/login">
+            <Link className={`${button('ghost', 'sm')} max-sm:hidden`} to="/auth">
               Sign in
             </Link>
-            <Link className={button('primary', 'sm')} to="/register">
+            <Link className={button('primary', 'sm')} to="/auth?mode=register">
               Create account
             </Link>
           </div>
