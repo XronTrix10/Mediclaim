@@ -28,21 +28,13 @@ Open http://localhost:8000/docs.
 
 ## Run with Docker
 
-Set a secret first:
+The root `docker-compose.yml` runs `postgres`, `backend`, and `frontend` together.
 
-```bash
-# macOS/Linux
-export JWT_SECRET="$(python -c 'import secrets; print(secrets.token_urlsafe(48))')"
-
-# PowerShell
-$env:JWT_SECRET = [Convert]::ToBase64String((1..48 | ForEach-Object { Get-Random -Maximum 256 }))
-```
-
-Build and start:
+From the project root:
 
 ```bash
 docker compose up --build -d
-docker compose logs -f mediclaim-auth
+docker compose logs -f backend
 ```
 
 Stop:

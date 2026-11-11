@@ -1,0 +1,69 @@
+services:
+  postgres:
+    image: postgres:16-alpine
+    container_name: mediclaim-postgres
+    restart: unless-stopped
+    environment:
+      POSTGRES_DB: ${POSTGRES_DB:-mediclaim}
+      POSTGRES_USER: ${POSTGRES_USER:-mediclaim}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-mediclaim_secret_password}
+    ports:
+      - "${POSTGRES_PORT:-5432}:5432"
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
+      - ./infra/db:/docker-entrypoint-initdb.d:ro
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U ${POSTGRES_USER:-mediclaim} -d ${POSTGRES_DB:-mediclaim}"]
+      interval: 5s
+      timeout: 5s
+      retries: 5
+      start_period: 10s
+    networks:
+      - mediclaim-network
+
+  backend:
+    build:
+      context: ./backend
+      dockerfile: Dockerfile
+    image: mediclaim-backend:latest
+    container_name: mediclaim-backend
+    restart: unless-stopped
+    ports:
+      - "${BACKEND_PORT:-8000}:8000"
+    environment:
+      JWT_SECRET: ${JWT_SECRET:-mediclaim_dev_jwt_secret_change_in_production}
+      OTP_DEBUG: ${OTP_DEBUG:-true}
+      DATABASE_PATH: /data/mediclaim.db
+      DATABASE_URL: postgresql://${POSTGRES_USER:-mediclaim}:${POSTGRES_PASSWORD:-mediclaim_secret_password}@postgres:5432/${POSTGRES_DB:-mediclaim}
+    volumes:
+      - backend_data:/data
+    depends_on:
+      postgres:
+        condition: service_healthy
+    networks:
+      - mediclaim-network
+
+  frontend:
+    build:
+      context: ./frontend
+      dockerfile: Dockerfile
+    image: mediclaim-frontend:latest
+    container_name: mediclaim-frontend
+    restart: unless-stopped
+    ports:
+      - "${FRONTEND_PORT:-3000}:80"
+      - "5173:80"
+    depends_on:
+      backend:
+        condition: service_started
+    networks:
+      - mediclaim-network
+
+volumes:
+  postgres_data:
+  backend_data:
+
+networks:
+  mediclaim-network:
+    driver: bridge
+
