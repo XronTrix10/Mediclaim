@@ -1,21 +1,15 @@
-# Build stage
-FROM node:22-alpine AS builder
+FROM node:22-alpine
 
 WORKDIR /app
+
+ENV CHOKIDAR_USEPOLLING=true \
+    WATCHPACK_POLLING=true
 
 COPY package.json package-lock.json ./
 RUN npm ci
 
 COPY . .
-RUN npm run build
 
-# Production stage
-FROM nginx:1.27-alpine
+EXPOSE 5173
 
-COPY nginx.conf /etc/nginx/conf.d/default.conf
-COPY --from=builder /app/dist /usr/share/nginx/html
-
-EXPOSE 80
-
-CMD ["nginx", "-g", "daemon off;"]
-
+CMD ["npm", "run", "dev", "--", "--host", "0.0.0.0"]
