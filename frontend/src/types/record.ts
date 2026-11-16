@@ -5,31 +5,38 @@ export type AllergyCriticality = 'low' | 'high' | 'unable-to-assess'
 export type AllergyCategory = 'food' | 'medication' | 'environment' | 'biologic'
 export type RecordStatus = 'active' | 'resolved' | 'inactive' | 'completed' | 'discontinued'
 
-export interface AllergyRecord {
+/** Who entered the record. Self-reported and uploaded records are not clinician-verified. */
+export type RecordSource = 'self_reported' | 'uploaded' | 'practitioner'
+
+export interface HealthEvent {
   id: string
-  kind: 'allergy'
+  kind: Kind
   title: string
+  /** Short label used inside graphs */
+  short?: string
+  detail: string
+  date: string
+  provider: string
+  status?: RecordStatus
+  source?: RecordSource
+  // Allergy details
+  severity?: AllergySeverity
+  criticality?: AllergyCriticality
+  category?: AllergyCategory
+  reaction?: string
+  notes?: string
+  // Attached document (prescriptions)
+  prescriptionId?: string
+  fileType?: 'pdf' | 'image'
+  fileName?: string
+}
+
+export interface NewAllergyInput {
   allergen: string
   category: AllergyCategory
   severity: AllergySeverity
   criticality: AllergyCriticality
   reaction: string
-  status: RecordStatus
-  identifiedDate: string
-  provider: string
-  notes?: string
-}
-
-export interface ConditionRecord {
-  id: string
-  kind: 'condition'
-  title: string
-  conditionName: string
-  clinicalCode?: string
-  severity?: string
-  status: RecordStatus
-  onsetDate: string
-  resolvedDate?: string
   provider: string
   notes?: string
 }
@@ -45,6 +52,7 @@ export interface PrescriptionRecord {
   fileType: 'pdf' | 'image'
   fileName: string
   fileSize?: string
+  /** In-memory blob URL for this session only. Never persisted. */
   fileUrl?: string
   instructions?: string
   medications?: {
@@ -55,41 +63,12 @@ export interface PrescriptionRecord {
   }[]
 }
 
-export interface VaccinationRecord {
+export interface CorrectionRequest {
   id: string
-  kind: 'vaccination'
-  title: string
-  vaccineName: string
-  doseNumber: number
-  administeredDate: string
-  nextDueDate?: string
-  batchNumber?: string
-  provider: string
-  notes?: string
-}
-
-export interface DiagnosticReportRecord {
-  id: string
-  kind: 'report'
-  title: string
-  reportType?: string
-  date: string
-  provider: string
-  detail: string
-  fileUrl?: string
-}
-
-export interface HealthEvent {
-  id: string
-  kind: Kind
-  title: string
-  short?: string
-  detail: string
-  date: string
-  provider: string
-  status?: RecordStatus
-  severity?: AllergySeverity
-  reaction?: string
-  fileType?: 'pdf' | 'image'
-  fileName?: string
+  recordId: string
+  recordTitle: string
+  reason: string
+  proposed?: string
+  status: 'under_review'
+  createdAt: string
 }

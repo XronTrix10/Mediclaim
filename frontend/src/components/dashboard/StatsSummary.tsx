@@ -6,38 +6,38 @@ interface StatsSummaryProps {
 }
 
 export default function StatsSummary({ events }: StatsSummaryProps) {
-  const activeAllergies = events.filter((e) => e.kind === 'allergy' && e.status === 'active')
-  const activeConditions = events.filter((e) => e.kind === 'condition' && e.status === 'active')
-  const activeMedicines = events.filter((e) => e.kind === 'medication' && e.status === 'active')
+  const active = (kind: HealthEvent['kind']) => events.filter((e) => e.kind === kind && e.status === 'active')
+  const allergies = active('allergy')
+  const conditions = active('condition')
+  const medicines = active('medication')
   const vaccinations = events.filter((e) => e.kind === 'vaccination')
 
   return (
     <section className="grid grid-cols-2 gap-3 sm:grid-cols-4" aria-label="Health record summary">
       <StatCard
         kind="allergy"
-        value={activeAllergies.length}
+        value={allergies.length}
         label="Active allergies"
-        note={activeAllergies.map((a) => a.title).join(', ') || 'No active allergies'}
+        note={allergies.map((a) => a.title).join(', ') || 'None recorded'}
       />
       <StatCard
         kind="condition"
-        value={activeConditions.length}
+        value={conditions.length}
         label="Active conditions"
-        note={activeConditions.map((c) => c.title).join(', ') || 'No active conditions'}
+        note={conditions.map((c) => c.short ?? c.title).join(', ') || 'None recorded'}
       />
       <StatCard
         kind="medication"
-        value={activeMedicines.length}
+        value={medicines.length}
         label="Current medicines"
-        note={activeMedicines.map((m) => m.title.split(' ')[0]).join(', ') || 'None prescribed'}
+        note={medicines.map((m) => m.short ?? m.title.split(' ')[0]).join(', ') || 'None recorded'}
       />
       <StatCard
         kind="vaccination"
         value={vaccinations.length}
         label="Vaccinations"
-        note={vaccinations.length > 0 ? `${vaccinations.length} doses logged` : 'Schedule not started'}
+        note={vaccinations.length > 0 ? `${vaccinations.length} doses logged` : 'None recorded'}
       />
     </section>
   )
 }
-
