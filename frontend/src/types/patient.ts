@@ -1,6 +1,7 @@
 export type Gender = 'Male' | 'Female' | 'Non-binary' | 'Other' | 'Prefer not to say'
 
-export type BloodGroup = 'A+' | 'A−' | 'B+' | 'B−' | 'AB+' | 'AB−' | 'O+' | 'O−' | 'Unknown'
+/** ASCII hyphen-minus, so values match what the API validates. Use bloodGroupLabel() for display. */
+export type BloodGroup = 'A+' | 'A-' | 'B+' | 'B-' | 'AB+' | 'AB-' | 'O+' | 'O-' | 'Unknown'
 
 export type EmergencyRelation =
   | 'Parent'
@@ -49,4 +50,3 @@ export interface PermittedPersonalDetailsUpdate {
   address?: string
   emergencyContact?: EmergencyContact
 }
-

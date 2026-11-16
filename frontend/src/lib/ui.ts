@@ -6,7 +6,7 @@ export const wrap = 'mx-auto w-[min(1120px,100%-2rem)] sm:w-[min(1120px,100%-3re
 export const lead = 'max-w-[34rem] text-[1.15rem] leading-relaxed text-ink-soft'
 
 const base =
-  'inline-flex items-center justify-center gap-2 rounded-full border font-semibold leading-tight whitespace-nowrap transition-colors'
+  'inline-flex max-w-full items-center justify-center gap-2 rounded-full border font-semibold leading-tight whitespace-nowrap transition-colors disabled:cursor-not-allowed disabled:opacity-50'
 
 const variants = {
   primary: 'border-transparent bg-brand text-white hover:bg-brand-deep',
@@ -28,17 +28,32 @@ export function button(variant: keyof typeof variants, size: keyof typeof sizes 
 export const input =
   'w-full rounded-[14px] border border-line-strong bg-white px-4 py-[13px] transition placeholder:text-[#85999f] focus:border-brand focus:ring-4 focus:ring-brand/15 focus:outline-none'
 
-export const select =
-  `${input} appearance-none pr-11 bg-[url("data:image/svg+xml;utf8,<svg xmlns='http://www.w3.org/2000/svg' width='16' height='16' viewBox='0 0 24 24' fill='none' stroke='%235e7882' stroke-width='2' stroke-linecap='round' stroke-linejoin='round'><path d='M6 9l6 6 6-6'/></svg>")] bg-no-repeat bg-[right_16px_center]`
+// The chevron image is defined once as the select-chevron utility in index.css.
+export const select = `${input} appearance-none pr-11 select-chevron`
 
 export const card = 'rounded-[26px] border border-line bg-white p-[22px] sm:p-7 shadow-soft'
 
 export const cardFlush = 'rounded-[26px] border border-line bg-white px-[18px] py-1.5 sm:px-6 sm:py-2 shadow-soft'
 
-export const cardTitle = 'mb-4.5 flex items-baseline justify-between gap-3 text-[1.35rem]'
+export const cardTitle = 'mb-4.5 flex flex-wrap items-center justify-between gap-x-3 gap-y-2 text-[1.25rem] sm:text-[1.35rem]'
 
 export const chip =
   'rounded-full border border-line-strong bg-white px-4 py-[7px] text-[0.88rem] font-medium text-ink-soft transition-colors hover:border-brand aria-pressed:border-brand aria-pressed:bg-brand-tint aria-pressed:font-semibold aria-pressed:text-brand-deep'
 
 export const avatar =
   'grid size-[42px] shrink-0 place-items-center rounded-full bg-brand-tint text-[0.88rem] font-semibold text-brand-deep'
+
+export const textLink =
+  'font-sans text-[0.88rem] font-semibold text-brand hover:underline hover:underline-offset-[3px]'
+
+export const label = 'text-[0.82rem] font-semibold text-ink'
+
+export const textarea = `${input} resize-none py-2.5 text-[0.95rem]`
+
+export const emptyBox =
+  'rounded-[18px] border-2 border-dashed border-line-strong px-5 py-8 text-center sm:px-6'
+
+export const countChip = {
+  brand: 'rounded-full bg-brand-tint px-2.5 py-0.5 text-xs font-semibold text-brand-deep',
+  allergy: 'rounded-full bg-allergy-tint px-2.5 py-0.5 text-xs font-semibold text-allergy-ink',
+} as const

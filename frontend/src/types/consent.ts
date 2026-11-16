@@ -5,10 +5,9 @@ export interface AccessGrant {
   name: string
   role: string
   scope: Kind[]
-  remaining: string
+  /** ISO 8601 UTC. The remaining time is always computed from this. */
+  expiresAt: string
   validFrom?: string
-  expiresAt?: string
-  status?: 'active' | 'expired' | 'revoked'
 }
 
 export interface AccessRequest {
@@ -16,7 +15,7 @@ export interface AccessRequest {
   name: string
   role: string
   scope: Kind[]
-  duration: string
+  durationHours: number
   requestedAt?: string
 }
 
@@ -24,7 +23,8 @@ export interface Caregiver {
   id: string
   name: string
   relation: string
-  scope: string
+  scope: Kind[]
+  /** YYYY-MM-DD */
   since: string
 }
 
@@ -32,7 +32,7 @@ export interface AuditLogEntry {
   id: string
   who: string
   what: string
-  when: string
-  action?: 'view' | 'upload' | 'revoke' | 'approve' | 'emergency'
+  /** ISO 8601 UTC */
+  at: string
+  action?: 'view' | 'upload' | 'revoke' | 'approve' | 'grant' | 'correction' | 'emergency'
 }
-

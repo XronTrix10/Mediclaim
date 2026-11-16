@@ -1,4 +1,10 @@
 @import 'tailwindcss';
+@source './lib';
+
+/* The @source line makes Tailwind scan src/lib (where lib/ui.ts keeps the shared button, input and container
+   classes). Without it, Tailwind's automatic detection skips any folder matched by a .gitignore, and a
+   monorepo's root .gitignore (Python template) usually lists "lib/". Then those classes are silently never
+   generated: buttons and inputs lose their vertical padding and the page container loses its width and margins. */
 
 @theme static {
   --font-sans: 'Figtree', system-ui, -apple-system, 'Segoe UI', sans-serif;
@@ -48,3 +54,10 @@
 [data-kind='medication'] { --k: var(--color-medication); --kt: var(--color-medication-tint); --ki: var(--color-medication-ink); }
 [data-kind='vaccination'] { --k: var(--color-vaccination); --kt: var(--color-vaccination-tint); --ki: var(--color-vaccination-ink); }
 [data-kind='report'] { --k: var(--color-report); --kt: var(--color-report-tint); --ki: var(--color-report-ink); }
+
+/* Dropdown arrow for native <select> elements (see `select` in lib/ui.ts). */
+@utility select-chevron {
+  background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='16' height='16' viewBox='0 0 24 24' fill='none' stroke='%235e7882' stroke-width='2' stroke-linecap='round' stroke-linejoin='round'%3E%3Cpath d='M6 9l6 6 6-6'/%3E%3C/svg%3E");
+  background-repeat: no-repeat;
+  background-position: right 16px center;
+}
