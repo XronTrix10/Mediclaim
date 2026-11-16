@@ -17,6 +17,7 @@ class RegisterData(BaseModel):
     accountStatus: str = "pending_otp"
     otpSent: bool
     otpExpiresInSeconds: int
+    debugOtp: Optional[str] = None
 
 class EnvelopeMeta(BaseModel):
     requestId: Optional[str] = None
@@ -70,6 +71,7 @@ class RequestOTPRequest(BaseModel):
 class RequestOTPData(BaseModel):
     maskedPhone: str
     otpExpiresInSeconds: int
+    debugOtp: Optional[str] = None
 
 class RequestOTPResponse(BaseModel):
     status: str = "success"

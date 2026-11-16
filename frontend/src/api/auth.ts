@@ -1,0 +1,105 @@
+import { api, setStoredToken, setStoredUser, getStoredUser, getStoredToken } from './client'
+import type { UserRole } from '../types/auth'
+
+export interface UserSummary {
+  id: string
+  fullName: string
+  email?: string | null
+  phone: string
+  role: UserRole
+  mediclaimId?: string | null
+  isActive: boolean
+  adminVerified: boolean
+  isProfileComplete: boolean
+}
+
+export interface RegisterResult {
+  userId: string
+  mediclaimId: string
+  phone: string
+  accountStatus: string
+  otpSent: boolean
+  otpExpiresInSeconds: number
+  debugOtp?: string | null
+}
+
+export interface AuthSession {
+  accessToken: string
+  tokenType: string
+  expiresIn: number
+  user: UserSummary
+}
+
+export interface RequestOtpResult {
+  maskedPhone: string
+  otpExpiresInSeconds: number
+  debugOtp?: string | null
+}
+
+export const authApi = {
+  async register(payload: {
+    fullName: string
+    dateOfBirth: string
+    phone: string
+    aadhaarNumber: string
+    password: string
+  }): Promise<RegisterResult> {
+    const res = await api.post<{ status: string; data: RegisterResult }>('/auth/register', payload)
+    return res.data
+  },
+
+  async verifyOtp(userId: string, otp: string): Promise<AuthSession> {
+    const res = await api.post<{ status: string; data: AuthSession }>('/auth/verify-otp', {
+      userId,
+      otp,
+    })
+    setStoredToken(res.data.accessToken)
+    setStoredUser(res.data.user)
+    return res.data
+  },
+
+  async login(payload: {
+    mediclaimId: string
+    password?: string
+    otp?: string
+  }): Promise<AuthSession> {
+    const res = await api.post<{ status: string; data: AuthSession }>('/auth/login', payload)
+    setStoredToken(res.data.accessToken)
+    setStoredUser(res.data.user)
+    return res.data
+  },
+
+  async requestOtp(mediclaimId: string): Promise<RequestOtpResult> {
+    const res = await api.post<{ status: string; data: RequestOtpResult }>('/auth/request-otp', {
+      mediclaimId,
+    })
+    return res.data
+  },
+
+  async resendOtp(userId: string): Promise<{ otpExpiresInSeconds: number; debugOtp?: string | null }> {
+    const res = await api.post<{ status: string; data: { otpExpiresInSeconds: number; debugOtp?: string | null } }>(
+      '/auth/resend-otp',
+      { userId }
+    )
+    return res.data
+  },
+
+  async logout(): Promise<void> {
+    try {
+      await api.post('/auth/logout', {})
+    } catch {
+      // Ignore errors on logout
+    } finally {
+      setStoredToken(null)
+      setStoredUser(null)
+    }
+  },
+
+  getCurrentUser(): UserSummary | null {
+    return getStoredUser()
+  },
+
+  isAuthenticated(): boolean {
+    return !!getStoredToken()
+  },
+}

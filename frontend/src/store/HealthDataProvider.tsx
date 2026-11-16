@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useReducer } from 'react'
+import { useEffect, useMemo, useReducer, useRef } from 'react'
 import type { ReactNode } from 'react'
 import { HealthDataContext } from './healthData'
 import type { GiveAccessInput, HealthActions, HealthContextValue, HealthState } from './healthData'
@@ -24,6 +24,14 @@ import type {
   Caregiver,
 } from '../types'
 import type { BloodGroup, Gender } from '../types'
+import {
+  authApi,
+  patientApi,
+  recordsApi,
+  consentApi,
+  auditApi,
+  correctionsApi,
+} from '../api'
 
 const STORAGE_KEY = 'mediclaim:v2'
 const LEGACY = {
@@ -80,7 +88,21 @@ function loadInitial(): HealthState {
   const state = seedState(now)
   const legacyProfile = readJSON<HealthState['profile']>(LEGACY.patient)
   const legacyRx = readJSON<PrescriptionRecord[]>(LEGACY.prescriptions)
-  const legacyAllergies = readJSON<{ id: string; title: string; allergen: string; category: HealthEvent['category']; severity: HealthEvent['severity']; criticality: HealthEvent['criticality']; reaction: string; status: HealthEvent['status']; identifiedDate: string; provider: string; notes?: string }[]>(LEGACY.allergies)
+  const legacyAllergies = readJSON<
+    {
+      id: string
+      title: string
+      allergen: string
+      category: HealthEvent['category']
+      severity: HealthEvent['severity']
+      criticality: HealthEvent['criticality']
+      reaction: string
+      status: HealthEvent['status']
+      identifiedDate: string
+      provider: string
+      notes?: string
+    }[]
+  >(LEGACY.allergies)
   if (legacyProfile) state.profile = { ...legacyProfile, isProfileComplete: legacyProfile.isProfileComplete ?? false }
   else if (localStorage.getItem(LEGACY.complete) === 'true') state.profile = { ...state.profile, isProfileComplete: true }
   if (legacyRx) state.prescriptions = legacyRx.map((rx) => ({ ...rx, fileUrl: undefined }))
@@ -106,6 +128,8 @@ function loadInitial(): HealthState {
 /* ---------- Reducer ---------- */
 
 type Action =
+  | { type: 'state/hydrated'; payload: Partial<HealthState> }
+  | { type: 'profile/hydrated'; profile: HealthState['profile'] }
   | { type: 'profile/complete'; payload: ProfileCompletionPayload; now: number }
   | { type: 'profile/update'; update: PermittedPersonalDetailsUpdate; now: number }
   | { type: 'allergy/add'; input: NewAllergyInput; id: string; now: number }
@@ -131,6 +155,12 @@ function scopeLabel(scope: AccessGrant['scope']) {
 
 function reducer(state: HealthState, action: Action): HealthState {
   switch (action.type) {
+    case 'state/hydrated':
+      return { ...state, ...action.payload }
+
+    case 'profile/hydrated':
+      return { ...state, profile: action.profile }
+
     case 'profile/complete': {
       const p = action.payload
       return {
@@ -260,7 +290,15 @@ function reducer(state: HealthState, action: Action): HealthState {
       return {
         ...state,
         corrections: [
-          { id: action.id, recordId: action.recordId, recordTitle: action.recordTitle, reason: action.reason, proposed: action.proposed, status: 'under_review', createdAt: new Date(action.now).toISOString() },
+          {
+            id: action.id,
+            recordId: action.recordId,
+            recordTitle: action.recordTitle,
+            reason: action.reason,
+            proposed: action.proposed,
+            status: 'under_review',
+            createdAt: new Date(action.now).toISOString(),
+          },
           ...state.corrections,
         ],
         audit: log(state, action.now, 'You', `requested a correction to ${action.recordTitle}`, 'correction'),
@@ -288,16 +326,109 @@ function toPrescriptionEvent(rx: PrescriptionRecord): HealthEvent {
 
 export default function HealthDataProvider({ children }: { children: ReactNode }) {
   const [state, dispatch] = useReducer(reducer, undefined, loadInitial)
+  const stateRef = useRef(state)
+  stateRef.current = state
 
+  // Save to local storage
   useEffect(() => {
     try {
       localStorage.setItem(STORAGE_KEY, JSON.stringify(serialize(state)))
     } catch {
-      // Storage can be full or blocked (private mode). The app keeps working in memory.
+      // Storage can be full or blocked
     }
   }, [state])
 
-  // End each access grant the moment its time is up, instead of waiting for a refresh.
+  // Hydrate data from API if user is authenticated
+  useEffect(() => {
+    if (!authApi.isAuthenticated()) return
+
+    let isMounted = true
+
+    async function syncFromBackend() {
+      try {
+        const [
+          profileRes,
+          recordsRes,
+          prescriptionsRes,
+          grantsRes,
+          requestsRes,
+          caregiversRes,
+          auditRes,
+          correctionsRes,
+        ] = await Promise.allSettled([
+          patientApi.getProfile(),
+          recordsApi.getRecords(),
+          recordsApi.getPrescriptions(),
+          consentApi.getGrants(),
+          consentApi.getRequests(),
+          consentApi.getCaregivers(),
+          auditApi.getAuditLogs(),
+          correctionsApi.getCorrections(),
+        ])
+
+        if (!isMounted) return
+
+        const patch: Partial<HealthState> = {}
+
+        if (profileRes.status === 'fulfilled' && profileRes.value) {
+          const p = profileRes.value
+          patch.profile = {
+            ...p,
+            gender: (p.gender || '') as Gender,
+            bloodGroup: (p.bloodGroup || '') as BloodGroup,
+            address: p.address || '',
+            emergencyContact: p.emergencyContact || {
+              name: '',
+              phone: '',
+              relation: 'Parent',
+            },
+          }
+        }
+
+        if (recordsRes.status === 'fulfilled' && recordsRes.value) {
+          patch.ownEvents = recordsRes.value
+        }
+
+        if (prescriptionsRes.status === 'fulfilled' && prescriptionsRes.value) {
+          patch.prescriptions = prescriptionsRes.value
+        }
+
+        if (grantsRes.status === 'fulfilled' && grantsRes.value) {
+          patch.grants = grantsRes.value
+        }
+
+        if (requestsRes.status === 'fulfilled' && requestsRes.value) {
+          patch.requests = requestsRes.value
+        }
+
+        if (caregiversRes.status === 'fulfilled' && caregiversRes.value) {
+          patch.caregivers = caregiversRes.value
+        }
+
+        if (auditRes.status === 'fulfilled' && auditRes.value && auditRes.value.length > 0) {
+          patch.audit = auditRes.value
+        }
+
+        if (correctionsRes.status === 'fulfilled' && correctionsRes.value) {
+          patch.corrections = correctionsRes.value
+        }
+
+        if (Object.keys(patch).length > 0) {
+          dispatch({ type: 'state/hydrated', payload: patch })
+        }
+      } catch {
+        // Fallback silently to offline/stored state
+      }
+    }
+
+    syncFromBackend()
+
+    return () => {
+      isMounted = false
+    }
+  }, [])
+
+  // End each access grant the moment its time is up
   const nextExpiry = useMemo(
     () => state.grants.reduce((min, g) => Math.min(min, Date.parse(g.expiresAt)), Infinity),
     [state.grants],
@@ -311,13 +442,105 @@ export default function HealthDataProvider({ children }: { children: ReactNode }
 
   const actions = useMemo<HealthActions>(
     () => ({
-      completeProfile: (payload) => dispatch({ type: 'profile/complete', payload, now: Date.now() }),
-      updatePermittedDetails: (update) => dispatch({ type: 'profile/update', update, now: Date.now() }),
-      addAllergy: (input) => dispatch({ type: 'allergy/add', input, id: uid('alg'), now: Date.now() }),
-      addPrescription: (rx) => dispatch({ type: 'rx/add', rx: { ...rx, id: uid('rx') }, now: Date.now() }),
-      removePrescription: (id) => dispatch({ type: 'rx/remove', id }),
+      completeProfile: async (payload) => {
+        dispatch({ type: 'profile/complete', payload, now: Date.now() })
+        if (authApi.isAuthenticated()) {
+          try {
+            const updated = await patientApi.completeProfile(payload)
+            dispatch({
+              type: 'profile/hydrated',
+              profile: {
+                ...updated,
+                gender: (updated.gender || '') as Gender,
+                bloodGroup: (updated.bloodGroup || '') as BloodGroup,
+                address: updated.address || '',
+                emergencyContact: updated.emergencyContact || {
+                  name: payload.emergencyName,
+                  phone: payload.emergencyPhone,
+                  relation: payload.emergencyRelation,
+                },
+              },
+            })
+          } catch (e) {
+            console.warn('Backend complete profile sync failed:', e)
+          }
+        }
+      },
+
+      updatePermittedDetails: async (update) => {
+        dispatch({ type: 'profile/update', update, now: Date.now() })
+        if (authApi.isAuthenticated()) {
+          try {
+            const updated = await patientApi.updatePermittedDetails(update)
+            dispatch({
+              type: 'profile/hydrated',
+              profile: {
+                ...updated,
+                gender: (updated.gender || '') as Gender,
+                bloodGroup: (updated.bloodGroup || '') as BloodGroup,
+                address: updated.address || '',
+                emergencyContact: updated.emergencyContact || {
+                  name: '',
+                  phone: '',
+                  relation: 'Parent',
+                },
+              },
+            })
+          } catch (e) {
+            console.warn('Backend update permitted details sync failed:', e)
+          }
+        }
+      },
+
+      addAllergy: async (input) => {
+        const eventId = uid('alg')
+        dispatch({ type: 'allergy/add', input, id: eventId, now: Date.now() })
+        if (authApi.isAuthenticated()) {
+          try {
+            await recordsApi.addAllergy(input)
+          } catch (e) {
+            console.warn('Backend add allergy sync failed:', e)
+          }
+        }
+      },
+
+      addPrescription: async (rx) => {
+        const rxId = uid('rx')
+        const fullRx: PrescriptionRecord = { ...rx, id: rxId }
+        dispatch({ type: 'rx/add', rx: fullRx, now: Date.now() })
+        if (authApi.isAuthenticated()) {
+          try {
+            await recordsApi.addPrescription(fullRx)
+          } catch (e) {
+            console.warn('Backend add prescription sync failed:', e)
+          }
+        }
+      },
+
+      removePrescription: async (id) => {
+        dispatch({ type: 'rx/remove', id })
+        if (authApi.isAuthenticated()) {
+          try {
+            await recordsApi.removePrescription(id)
+          } catch (e) {
+            console.warn('Backend remove prescription sync failed:', e)
+          }
+        }
+      },
+
       toggleSample: () => dispatch({ type: 'sample/toggle' }),
-      revokeGrant: (id) => dispatch({ type: 'grant/revoke', id, now: Date.now() }),
+
+      revokeGrant: async (id) => {
+        dispatch({ type: 'grant/revoke', id, now: Date.now() })
+        if (authApi.isAuthenticated()) {
+          try {
+            await consentApi.revokeGrant(id)
+          } catch (e) {
+            console.warn('Backend revoke grant sync failed:', e)
+          }
+        }
+      },
+
       giveAccess: (input: GiveAccessInput) => {
         const now = Date.now()
         const grant: AccessGrant = {
@@ -329,14 +552,72 @@ export default function HealthDataProvider({ children }: { children: ReactNode }
           expiresAt: new Date(now + input.hours * 3_600_000).toISOString(),
         }
         dispatch({ type: 'grant/give', grant, now })
+        if (authApi.isAuthenticated()) {
+          consentApi.giveAccess(input).catch((e) => console.warn('Backend give access sync failed:', e))
+        }
         return grant
       },
-      approveRequest: (id) => dispatch({ type: 'request/approve', id, grantId: uid('g'), now: Date.now() }),
-      declineRequest: (id) => dispatch({ type: 'request/decline', id, now: Date.now() }),
-      addCaregiver: (input) =>
-        dispatch({ type: 'caregiver/add', caregiver: { ...input, id: uid('c'), since: todayISO() }, now: Date.now() }),
-      removeCaregiver: (id) => dispatch({ type: 'caregiver/remove', id, now: Date.now() }),
-      requestCorrection: (input) => dispatch({ type: 'correction/add', id: uid('corr'), now: Date.now(), ...input }),
+
+      approveRequest: async (id) => {
+        const now = Date.now()
+        const req = stateRef.current.requests.find((r) => r.id === id)
+        const grantId = uid('g')
+        dispatch({ type: 'request/approve', id, grantId, now })
+        if (authApi.isAuthenticated() && req) {
+          try {
+            await consentApi.approveRequest(id, req.scope, req.durationHours)
+          } catch (e) {
+            console.warn('Backend approve request sync failed:', e)
+          }
+        }
+      },
+
+      declineRequest: async (id) => {
+        dispatch({ type: 'request/decline', id, now: Date.now() })
+        if (authApi.isAuthenticated()) {
+          try {
+            await consentApi.declineRequest(id)
+          } catch (e) {
+            console.warn('Backend decline request sync failed:', e)
+          }
+        }
+      },
+
+      addCaregiver: async (input) => {
+        const caregiverId = uid('c')
+        const fullCaregiver: Caregiver = { ...input, id: caregiverId, since: todayISO() }
+        dispatch({ type: 'caregiver/add', caregiver: fullCaregiver, now: Date.now() })
+        if (authApi.isAuthenticated()) {
+          try {
+            await consentApi.addCaregiver(input)
+          } catch (e) {
+            console.warn('Backend add caregiver sync failed:', e)
+          }
+        }
+      },
+
+      removeCaregiver: async (id) => {
+        dispatch({ type: 'caregiver/remove', id, now: Date.now() })
+        if (authApi.isAuthenticated()) {
+          try {
+            await consentApi.removeCaregiver(id)
+          } catch (e) {
+            console.warn('Backend remove caregiver sync failed:', e)
+          }
+        }
+      },
+
+      requestCorrection: async (input) => {
+        const corrId = uid('corr')
+        dispatch({ type: 'correction/add', id: corrId, now: Date.now(), ...input })
+        if (authApi.isAuthenticated()) {
+          try {
+            await correctionsApi.requestCorrection(input)
+          } catch (e) {
+            console.warn('Backend request correction sync failed:', e)
+          }
+        }
+      },
     }),
     [],
   )

@@ -284,7 +284,7 @@ async def get_current_user(
         id=formatted_id,
         raw_uuid=str(user_row["id"]),
         public_id=user_row["public_id"],
-        mediclaimId=user_row["mediclaim_id"],
+        mediclaim_id=user_row["mediclaim_id"],
         full_name=user_row["full_name"],
         email=user_row.get("email"),
         phone=user_row["phone"],

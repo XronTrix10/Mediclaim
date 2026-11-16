@@ -113,6 +113,7 @@ def register_user(payload) -> Dict[str, Any]:
         "accountStatus": "pending_otp",
         "otpSent": True,
         "otpExpiresInSeconds": OTP_SECONDS,
+        "debugOtp": otp if OTP_DEBUG else None,
     }
 
 
@@ -322,6 +323,7 @@ def request_login_otp(payload) -> Dict[str, Any]:
     return {
         "maskedPhone": _mask_phone(user["phone"]),
         "otpExpiresInSeconds": OTP_SECONDS,
+        "debugOtp": otp if OTP_DEBUG else None,
     }
 
 
