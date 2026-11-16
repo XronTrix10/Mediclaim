@@ -160,4 +160,22 @@ def init_db() -> None:
         conn.execute("ALTER TABLE patient_profiles ADD COLUMN IF NOT EXISTS address text;")
         conn.execute("ALTER TABLE patient_profiles ADD COLUMN IF NOT EXISTS emergency_contact_relation varchar(50);")
 
+        # Clinical records and allergy extensions
+        conn.execute("ALTER TABLE clinical_records ADD COLUMN IF NOT EXISTS source varchar(30) DEFAULT 'self_reported';")
+        conn.execute("ALTER TABLE clinical_records ADD COLUMN IF NOT EXISTS provider varchar(255);")
+        conn.execute("ALTER TABLE allergies ADD COLUMN IF NOT EXISTS category varchar(50);")
+        conn.execute("ALTER TABLE allergies ADD COLUMN IF NOT EXISTS criticality varchar(30);")
+
+        # Prescriptions metadata extensions
+        conn.execute("ALTER TABLE prescriptions ADD COLUMN IF NOT EXISTS title varchar(255);")
+        conn.execute("ALTER TABLE prescriptions ADD COLUMN IF NOT EXISTS doctor_name varchar(255);")
+        conn.execute("ALTER TABLE prescriptions ADD COLUMN IF NOT EXISTS organization_name varchar(255);")
+        conn.execute("ALTER TABLE prescriptions ADD COLUMN IF NOT EXISTS file_type varchar(50);")
+        conn.execute("ALTER TABLE prescriptions ADD COLUMN IF NOT EXISTS file_name varchar(255);")
+        conn.execute("ALTER TABLE prescriptions ADD COLUMN IF NOT EXISTS file_size_bytes bigint;")
+        conn.execute("ALTER TABLE prescriptions ADD COLUMN IF NOT EXISTS file_url text;")
+        # Make practitioner_id nullable on prescriptions for uploaded/self-reported prescriptions
+        conn.execute("ALTER TABLE prescriptions ALTER COLUMN practitioner_id DROP NOT NULL;")
+
+
     logger.info("PostgreSQL database initialized and verified.")
