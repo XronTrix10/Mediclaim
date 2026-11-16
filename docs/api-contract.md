@@ -20,8 +20,9 @@
 8. [Doctor Consent & Access Control (`/consent`)](#8-doctor-consent--access-control-consent)
 9. [Emergency Break-Glass Protocol (`/emergency`)](#9-emergency-break-glass-protocol-emergency)
 10. [Audit Logging & Clinical Corrections (`/audit` & `/corrections`)](#10-audit-logging--clinical-corrections-audit--corrections)
-11. [Doctor Portal Access (`/doctor`)](#11-doctor-portal-access-doctor)
-12. [Standard Error Responses & Status Codes](#12-standard-error-responses--status-codes)
+11. [Administrator Portal & Verifications (`/admin`)](#11-administrator-portal--verifications-admin)
+12. [Doctor & Hospital Portal Access (`/doctor` & `/hospital`)](#12-doctor--hospital-portal-access-doctor--hospital)
+13. [Standard Error Responses & Status Codes](#13-standard-error-responses--status-codes)
 
 ---
 
@@ -941,15 +942,120 @@ Patients request corrections to erroneous entries made by clinicians.
 
 ---
 
-## 11. Doctor Portal Access (`/doctor`)
+## 11. Administrator Portal & Verifications (`/admin`)
 
-When a doctor logs into their portal and accesses an authorized patient:
-- `GET /api/v1/doctor/patients/{mediclaim_id}`: Fetches authorized patient summary (if active grant exists).
-- `GET /api/v1/doctor/patients/{mediclaim_id}/records`: Fetches records filtered strictly by the granted scope. Attempts to access out-of-scope records return `403 SCOPE_UNAUTHORIZED`.
+Authorized hospital and government administrators use these endpoints to review patient onboarding, audit emergency accesses, and inspect high-level healthcare metrics.
+
+### 11.1 List Pending Patient Verifications
+`GET /api/v1/admin/verifications`
+
+Lists patient registrations awaiting identity verification. Supports query searching by full name, mobile number, or Aadhaar number.
+
+#### Response (`200 OK`)
+```json
+{
+  "status": "success",
+  "data": [
+    {
+      "userId": "usr_8f3a921b-640a-49c1-8d20-410a72ce1234",
+      "fullName": "Ananya Rao",
+      "dateOfBirth": "1994-05-12",
+      "phone": "+919876543210",
+      "aadhaarMasked": "XXXX-XXXX-8921",
+      "accountStatus": "pending_admin_approval",
+      "phoneVerified": true,
+      "adminVerified": false,
+      "registeredAt": "2026-11-16T22:30:00Z"
+    }
+  ],
+  "meta": {
+    "requestId": "req_01J0A1B2C8",
+    "serverTime": "2026-11-16T22:40:00Z",
+    "total": 1
+  }
+}
+```
+
+### 11.2 Get Verification Detail
+`GET /api/v1/admin/verifications/{user_id}`
+
+Retrieves complete submitted identity and emergency contact details for review.
+
+### 11.3 Approve Patient Verification
+`POST /api/v1/admin/verifications/{user_id}/approve`
+
+Approves the patient registration, sets `admin_verified = true`, dispatches the 12-digit Mediclaim ID via simulated SMS/email notification, and records an immutable audit log entry.
+
+#### Response (`200 OK`)
+```json
+{
+  "status": "success",
+  "message": "Patient verification approved. Mediclaim ID dispatched to user.",
+  "data": {
+    "userId": "usr_8f3a921b-640a-49c1-8d20-410a72ce1234",
+    "fullName": "Ananya Rao",
+    "phone": "+919876543210",
+    "mediclaimId": "9481 2049 3817",
+    "adminVerified": true,
+    "notificationSent": true
+  }
+}
+```
+
+### 11.4 Reject Patient Verification
+`POST /api/v1/admin/verifications/{user_id}/reject`
+
+Rejects a fraudulent or mismatched registration, deactivating the account and logging the reason.
+
+#### Request Body
+```json
+{
+  "reason": "Aadhaar demographic mismatch with official registry."
+}
+```
+
+### 11.5 Administrator System Statistics
+`GET /api/v1/admin/stats`
+
+Returns aggregated healthcare network metrics.
+
+#### Response (`200 OK`)
+```json
+{
+  "status": "success",
+  "data": {
+    "totalPatients": 1420,
+    "pendingVerifications": 18,
+    "approvedPatients": 1402,
+    "totalPractitioners": 84,
+    "totalHealthcareOrganizations": 6,
+    "emergencyBreakGlassEvents": 12,
+    "totalClinicalRecords": 9520
+  },
+  "meta": {
+    "requestId": "req_01J0A1B2C9",
+    "serverTime": "2026-11-16T22:42:00Z"
+  }
+}
+```
+
+### 11.6 Patient Directory & Global Emergency Audits
+- `GET /api/v1/admin/patients`: Paginated patient directory with search.
+- `GET /api/v1/admin/emergency-events`: System-wide log of emergency break-glass accesses for clinical governance.
 
 ---
 
-## 12. Standard Error Responses & Status Codes
+## 12. Doctor & Hospital Portal Access (`/doctor` & `/hospital`)
+
+When a doctor logs into their portal and accesses an authorized patient:
+- `GET /api/v1/doctor/patients`: Lists all patients who have granted active consent to this doctor.
+- `GET /api/v1/doctor/patients/{mediclaim_id}`: Fetches authorized patient summary (if active grant exists).
+- `GET /api/v1/doctor/patients/{mediclaim_id}/records`: Fetches records filtered strictly by the granted scope. Attempts to access out-of-scope records return `403 SCOPE_UNAUTHORIZED`.
+- `POST /api/v1/doctor/requests`: Doctor submits access request for a patient by Mediclaim ID.
+
+---
+
+## 13. Standard Error Responses & Status Codes
 
 All error responses adhere to **RFC 9457 / RFC 7807** Problem Details served as `application/problem+json`:
 

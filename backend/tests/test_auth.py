@@ -1,3 +1,4 @@
+import secrets
 import unittest
 from datetime import date
 from app.schemas.auth import (
@@ -26,13 +27,9 @@ class TestAuthAndSecurity(unittest.TestCase):
         self.assertEqual(formatted, "1234 5678 9012")
 
     def test_auth_registration_and_login_flow(self):
-        phone = "+919999988888"
-        aadhaar = "998877665544"
+        phone = f"+9199{secrets.randbelow(90000000) + 10000000}"
+        aadhaar = str(secrets.randbelow(900000000000) + 100000000000)
         password = "SecurePassword123!"
-
-        # Clean up any existing test user with this phone or aadhaar
-        with get_db() as conn:
-            conn.execute("DELETE FROM users WHERE phone = %s OR aadhaar_number = %s", (phone, aadhaar))
 
         # 1. Register
         reg_payload = RegisterRequest(
