@@ -18,6 +18,11 @@ from app.routes.records import router as records_router
 from app.routes.timeline import router as timeline_router
 from app.routes.consent import router as consent_router
 from app.routes.doctor import router as doctor_router
+from app.routes.emergency import router as emergency_router
+from app.routes.audit import router as audit_router
+from app.routes.corrections import router as corrections_router
+from app.routes.uploads import router as uploads_router
+
 
 
 
@@ -67,6 +72,11 @@ app.include_router(records_router, prefix="/api/v1/records", tags=["Clinical Rec
 app.include_router(timeline_router, prefix="/api/v1/timeline", tags=["Timeline & Graph"])
 app.include_router(consent_router, prefix="/api/v1/consent", tags=["Doctor Consent & Caregivers"])
 app.include_router(doctor_router, prefix="/api/v1/doctor", tags=["Doctor Portal Access"])
+app.include_router(emergency_router, prefix="/api/v1/emergency", tags=["Emergency Break-Glass"])
+app.include_router(audit_router, prefix="/api/v1/audit", tags=["Audit Logging"])
+app.include_router(corrections_router, prefix="/api/v1/corrections", tags=["Clinical Corrections"])
+app.include_router(uploads_router, prefix="/api/v1", tags=["Documents & Uploads"])
+
 
 
 

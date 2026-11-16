@@ -184,6 +184,12 @@ def init_db() -> None:
         # Allow grantee_user_id to be nullable if direct grant by name/role
         conn.execute("ALTER TABLE patient_access_grants ALTER COLUMN valid_from DROP NOT NULL;")
 
+        # Audit and corrections extensions
+        conn.execute("ALTER TABLE audit_events DROP CONSTRAINT IF EXISTS audit_events_check;")
+        conn.execute("ALTER TABLE record_correction_requests ADD COLUMN IF NOT EXISTS record_title varchar(255);")
+        conn.execute("ALTER TABLE record_correction_requests ADD COLUMN IF NOT EXISTS proposed_text text;")
+        conn.execute("ALTER TABLE record_correction_requests ADD COLUMN IF NOT EXISTS review_notes text;")
+
         # Caregivers table
         conn.execute("""
             CREATE TABLE IF NOT EXISTS patient_caregivers (
@@ -197,6 +203,8 @@ def init_db() -> None:
                 deleted_at timestamp
             );
         """)
+
+
 
 
 
