@@ -1,43 +1,96 @@
 # Mediclaim Backend API Contract & Specification
 
+**Version**: 2.0.0  
 **Base URL**: `http://localhost:8000/api/v1`  
 **Healthcare Standard**: HL7 FHIR R4  
 **Authentication**: Bearer JWT (`Authorization: Bearer <token>`)  
-**Data Encryption**: Envelope encryption (AES-256-GCM per-patient data keys)
+**Data Encryption**: Envelope encryption (AES-256-GCM per-patient data keys)  
+**Error Standard**: RFC 9457 / RFC 7807 Problem Details (`application/problem+json`)
 
 ---
 
 ## Table of Contents
-1. [Overview & Security Architecture](#1-overview--security-architecture)
-2. [Authentication & Onboarding (`/auth`)](#2-authentication--onboarding-auth)
-3. [Patient Profile Management (`/patients`)](#3-patient-profile-management-patients)
-4. [Clinical Records & FHIR Resources (`/records`)](#4-clinical-records--fhir-resources-records)
-5. [Document Ingestion & File Uploads (`/uploads`)](#5-document-ingestion--file-uploads-uploads)
-6. [Lifelong Timeline & Health Graph (`/timeline`)](#6-lifelong-timeline--health-graph-timeline)
-7. [Doctor Consent & Access Control (`/consent`)](#7-doctor-consent--access-control-consent)
-8. [Emergency Break-Glass Access (`/emergency`)](#8-emergency-break-glass-access-emergency)
-9. [Audit Logging & Corrections (`/audit` & `/corrections`)](#9-audit-logging--corrections-audit--corrections)
-10. [Standard Error Responses](#10-standard-error-responses)
+1. [Overview & Architectural Principles](#1-overview--architectural-principles)
+2. [Data Types, Enums & Formatting Conventions](#2-data-types-enums--formatting-conventions)
+3. [Authentication & Account Lifecycle (`/auth`)](#3-authentication--account-lifecycle-auth)
+4. [Patient Profile Management (`/patients`)](#4-patient-profile-management-patients)
+5. [Clinical Records & FHIR Resources (`/records`)](#5-clinical-records--fhir-resources-records)
+6. [Document Ingestion & File Storage (`/uploads` & `/documents`)](#6-document-ingestion--file-storage-uploads--documents)
+7. [Lifelong Timeline & Health Graph (`/timeline`)](#7-lifelong-timeline--health-graph-timeline)
+8. [Doctor Consent & Access Control (`/consent`)](#8-doctor-consent--access-control-consent)
+9. [Emergency Break-Glass Protocol (`/emergency`)](#9-emergency-break-glass-protocol-emergency)
+10. [Audit Logging & Clinical Corrections (`/audit` & `/corrections`)](#10-audit-logging--clinical-corrections-audit--corrections)
+11. [Doctor Portal Access (`/doctor`)](#11-doctor-portal-access-doctor)
+12. [Standard Error Responses & Status Codes](#12-standard-error-responses--status-codes)
 
 ---
 
-## 1. Overview & Security Architecture
+## 1. Overview & Architectural Principles
 
-### Core Principles
-- **Unique Identification**: Patients authenticate with their 12-digit Mediclaim ID (linked to verified Aadhaar number).
-- **Time-Bounded Doctor Access**: Doctor tokens carry an explicit `exp` claim matching patient consent duration (e.g., 2 hours). Tokens expire automatically.
-- **Scoped Consent**: Doctor sessions are restricted to approved scopes (`allergy`, `medication`, `condition`, `vaccination`, `report`). Unauthorized scopes return `403 Forbidden`.
-- **Break-Glass Emergency Protocol**: Authorized emergency hospitals can bypass standard consent using audited break-glass procedures with mandatory post-incident review.
-- **Envelope Encryption**: Clinical records and documents are encrypted with unique per-patient data keys (DEK) wrapped by a Key Management Service (KMS).
+### 1.1 Core Principles
+- **Distinct Mediclaim ID**: Patients receive a unique 12-digit Mediclaim ID (e.g. `9481 2049 3817`), generated randomly with a Verhoeff/Luhn check digit, completely separate from any national ID.
+- **Privacy & Aadhaar Protection**: In compliance with UIDAI regulations and the Aadhaar Act, raw 12-digit Aadhaar numbers are never stored in plaintext. Identity verification is conducted via simulated/authorized e-KYC or Virtual ID (VID). Only a secure verification token and masked reference (e.g., `XXXX-XXXX-8921`) are retained. Compatible with ABHA (Ayushman Bharat Health Account) ABDM standards.
+- **Time-Bounded Doctor Access & Instant Revocation**: Doctor access tokens contain the grant identifier (`grt` claim) in addition to an expiration (`exp`). Every clinical request strictly validates in real time that the underlying grant is in `active` state. If a patient revokes access, subsequent requests immediately return `403 CONSENT_REVOKED`.
+- **Scoped Clinical Consent**: Patient records are partitioned into scopes (`allergy`, `medication`, `condition`, `vaccination`, `report`). Doctors may only access data matching approved scopes; out-of-scope requests return `403 SCOPE_UNAUTHORIZED`. Sensitive categories (`mental_health`, `reproductive_health`, `substance_use`) require explicit opt-in.
+- **Break-Glass Emergency Protocol**: Authorized emergency personnel can bypass consent for critical care, creating an immutable, tamper-evident audit record, alerting the patient/caregivers, and triggering mandatory clinical review.
+- **Envelope Response Format**: All successful responses follow a uniform envelope:
+  ```json
+  {
+    "status": "success",
+    "data": { ... },
+    "meta": {
+      "requestId": "req_01J...",
+      "serverTime": "2026-11-16T22:30:00Z"
+    }
+  }
+  ```
+  List endpoints include pagination metadata (`total`, `limit`, `nextCursor`).
 
 ---
 
-## 2. Authentication & Onboarding (`/auth`)
+## 2. Data Types, Enums & Formatting Conventions
 
-### 2.1 Register New Account
+### 2.1 Identifiers
+All database and API identifiers use opaque, typed prefixes:
+- User: `usr_<uuid>`
+- Patient Profile: `pat_<uuid>`
+- Practitioner Profile: `doc_<uuid>`
+- Healthcare Organization: `org_<uuid>`
+- Clinical Record: `rec_<uuid>`
+- Prescription: `rx_<uuid>`
+- Access Request: `req_<uuid>`
+- Access Grant: `grt_<uuid>`
+- Document / Upload: `doc_<uuid>` or `upl_<uuid>`
+- Correction Request: `corr_<uuid>`
+- Audit Event: `aud_<uuid>`
+
+### 2.2 Date and Time
+- All dates use `YYYY-MM-DD` (ISO 8601).
+- All timestamps use ISO 8601 UTC with explicit `Z` indicator: `YYYY-MM-DDTHH:MM:SSZ`.
+- Client interfaces calculate relative times ("2 hours left", "10 minutes ago") from UTC timestamps and `serverTime`.
+
+### 2.3 Enumerations
+- **UserRole**: `patient` | `practitioner` | `hospital_admin` | `caregiver` | `admin`
+- **Gender**: `Male` | `Female` | `Non-binary` | `Other` | `Prefer not to say`  
+  *(Mapped to FHIR `male` | `female` | `other` | `unknown` with original value preserved in extension)*
+- **BloodGroup**: `A+` | `A-` | `B+` | `B-` | `AB+` | `AB-` | `O+` | `O-` | `Unknown` *(always ASCII hyphen-minus)*
+- **EmergencyRelation**: `Parent` | `Spouse` | `Sibling` | `Child` | `Friend` | `Guardian` | `Other`
+- **Kind (Record Category)**: `allergy` | `condition` | `medication` | `vaccination` | `report`
+- **RecordStatus**: `active` | `resolved` | `inactive` | `completed` | `discontinued`
+- **RecordSource**: `self_reported` | `uploaded` | `practitioner`
+- **AllergyCategory**: `food` | `medication` | `environment` | `biologic`
+- **AllergySeverity**: `mild` | `moderate` | `severe` | `life-threatening`
+- **AllergyCriticality**: `low` | `high` | `unable-to-assess`
+- **EmergencyType**: `TRAUMA_RESUSCITATION` | `ACUTE_CORONARY` | `STROKE_THROMBOLYSIS` | `MASS_CASUALTY` | `OTHER_LIFE_THREATENING`
+
+---
+
+## 3. Authentication & Account Lifecycle (`/auth`)
+
+### 3.1 Register New Patient Account
 `POST /api/v1/auth/register`
 
-Registers a patient using Aadhaar verification and issues a permanent 12-digit Mediclaim ID.
+Initiates patient registration, sends an SMS verification OTP, and issues a 12-digit Mediclaim ID.
 
 #### Request Body
 ```json
@@ -56,24 +109,31 @@ Registers a patient using Aadhaar verification and issues a permanent 12-digit M
   "status": "success",
   "message": "Account created. Verification OTP dispatched.",
   "data": {
-    "userId": "usr-8f3a921b-640a-49c1-8d20-410a72ce1234",
+    "userId": "usr_8f3a921b-640a-49c1-8d20-410a72ce1234",
+    "mediclaimId": "9481 2049 3817",
     "phone": "+919876543210",
-    "adminVerified": false,
+    "accountStatus": "pending_otp",
     "otpSent": true,
     "otpExpiresInSeconds": 300
+  },
+  "meta": {
+    "requestId": "req_01J0A1B2C3",
+    "serverTime": "2026-11-16T22:30:00Z"
   }
 }
 ```
 
 ---
 
-### 2.2 Verify Aadhaar / Phone OTP
+### 3.2 Verify Phone / Registration OTP
 `POST /api/v1/auth/verify-otp`
+
+Validates the one-time password and activates the user account. Rate-limited to 5 incorrect attempts before temporary lockout.
 
 #### Request Body
 ```json
 {
-  "userId": "usr-8f3a921b-640a-49c1-8d20-410a72ce1234",
+  "userId": "usr_8f3a921b-640a-49c1-8d20-410a72ce1234",
   "otp": "492018"
 }
 ```
@@ -82,30 +142,40 @@ Registers a patient using Aadhaar verification and issues a permanent 12-digit M
 ```json
 {
   "status": "success",
-  "accessToken": "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9...",
-  "tokenType": "Bearer",
-  "expiresIn": 86400,
-  "user": {
-    "id": "usr-8f3a921b-640a-49c1-8d20-410a72ce1234",
-    "fullName": "Ananya Rao",
-    "role": "patient",
-    "adminVerified": false,
-    "isProfileComplete": false
+  "data": {
+    "accessToken": "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9...",
+    "tokenType": "Bearer",
+    "expiresIn": 900,
+    "user": {
+      "id": "usr_8f3a921b-640a-49c1-8d20-410a72ce1234",
+      "fullName": "Ananya Rao",
+      "email": null,
+      "phone": "+919876543210",
+      "role": "patient",
+      "mediclaimId": "9481 2049 3817",
+      "isActive": true,
+      "adminVerified": false,
+      "isProfileComplete": false
+    }
+  },
+  "meta": {
+    "requestId": "req_01J0A1B2C4",
+    "serverTime": "2026-11-16T22:31:00Z"
   }
 }
 ```
 
 ---
 
-### 2.3 Sign In
+### 3.3 Sign In (Password or SMS OTP)
 `POST /api/v1/auth/login`
 
-Supports authentication via Mediclaim ID + Password or SMS OTP.
+Accepts 12-digit Mediclaim ID (digits or spaced) with password or verified OTP.
 
 #### Request Body
 ```json
 {
-  "mediclaimId": "4821 9306 1175",
+  "mediclaimId": "9481 2049 3817",
   "password": "SecurePassword123!"
 }
 ```
@@ -114,24 +184,89 @@ Supports authentication via Mediclaim ID + Password or SMS OTP.
 ```json
 {
   "status": "success",
-  "accessToken": "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9...",
-  "tokenType": "Bearer",
-  "expiresIn": 86400,
-  "user": {
-    "id": "usr-8f3a921b-640a-49c1-8d20-410a72ce1234",
-    "fullName": "Ananya Rao",
-    "role": "patient",
-    "mediclaimId": "4821 9306 1175",
-    "isProfileComplete": true
+  "data": {
+    "accessToken": "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9...",
+    "tokenType": "Bearer",
+    "expiresIn": 900,
+    "user": {
+      "id": "usr_8f3a921b-640a-49c1-8d20-410a72ce1234",
+      "fullName": "Ananya Rao",
+      "email": "ananya.rao@example.com",
+      "phone": "+919876543210",
+      "role": "patient",
+      "mediclaimId": "9481 2049 3817",
+      "isActive": true,
+      "adminVerified": false,
+      "isProfileComplete": true
+    }
+  },
+  "meta": {
+    "requestId": "req_01J0A1B2C5",
+    "serverTime": "2026-11-16T22:32:00Z"
   }
 }
 ```
 
 ---
 
-## 3. Patient Profile Management (`/patients`)
+### 3.4 Request Login SMS OTP
+`POST /api/v1/auth/otp/request`
 
-### 3.1 Get Current Patient Profile
+#### Request Body
+```json
+{
+  "mediclaimId": "9481 2049 3817"
+}
+```
+
+#### Response (`200 OK`)
+```json
+{
+  "status": "success",
+  "message": "Login OTP dispatched to registered mobile number.",
+  "data": {
+    "maskedPhone": "+91 XXXXX 43210",
+    "otpExpiresInSeconds": 300
+  }
+}
+```
+
+---
+
+### 3.5 Resend OTP
+`POST /api/v1/auth/resend-otp`
+
+Dispatches a new OTP with exponential back-off rules.
+
+#### Request Body
+```json
+{
+  "userId": "usr_8f3a921b-640a-49c1-8d20-410a72ce1234"
+}
+```
+
+#### Response (`200 OK`)
+```json
+{
+  "status": "success",
+  "message": "New OTP dispatched successfully.",
+  "data": {
+    "otpExpiresInSeconds": 300
+  }
+}
+```
+
+---
+
+### 3.6 Refresh Token & Logout
+- `POST /api/v1/auth/refresh`: Issues a refreshed short-lived access token.
+- `POST /api/v1/auth/logout`: Invalidates the active session and tokens.
+
+---
+
+## 4. Patient Profile Management (`/patients`)
+
+### 4.1 Get Current Patient Profile
 `GET /api/v1/patients/me`
 
 #### Response (`200 OK`)
@@ -139,20 +274,20 @@ Supports authentication via Mediclaim ID + Password or SMS OTP.
 {
   "status": "success",
   "data": {
-    "id": "pat-001",
-    "userId": "usr-8f3a921b-640a-49c1-8d20-410a72ce1234",
-    "mediclaimId": "4821 9306 1175",
-    "aadhaarMasked": "XXXX-XXXX-1175",
+    "id": "pat_001",
+    "userId": "usr_8f3a921b-640a-49c1-8d20-410a72ce1234",
+    "mediclaimId": "9481 2049 3817",
+    "aadhaarMasked": "XXXX-XXXX-8921",
     "fullName": "Ananya Rao",
     "firstName": "Ananya",
     "dateOfBirth": "1994-05-12",
     "gender": "Female",
     "bloodGroup": "O+",
-    "phone": "+91 98765 43210",
+    "phone": "+919876543210",
     "address": "Flat 402, Sea View Apartments, Shivaji Park, Mumbai, Maharashtra – 400028",
     "emergencyContact": {
       "name": "Lakshmi Rao",
-      "phone": "+91 98765 12345",
+      "phone": "+919876512345",
       "relation": "Mother"
     },
     "isProfileComplete": true,
@@ -164,10 +299,8 @@ Supports authentication via Mediclaim ID + Password or SMS OTP.
 
 ---
 
-### 3.2 Complete Profile (Mandatory on First Visit)
+### 4.2 Complete Profile (Mandatory on First Login)
 `POST /api/v1/patients/me/complete-profile`
-
-Called when a user lands on the dashboard for the first time.
 
 #### Request Body
 ```json
@@ -176,7 +309,7 @@ Called when a user lands on the dashboard for the first time.
   "bloodGroup": "O+",
   "address": "Flat 402, Sea View Apartments, Shivaji Park, Mumbai – 400028",
   "emergencyName": "Lakshmi Rao",
-  "emergencyPhone": "+91 98765 12345",
+  "emergencyPhone": "+919876512345",
   "emergencyRelation": "Mother"
 }
 ```
@@ -188,26 +321,26 @@ Called when a user lands on the dashboard for the first time.
   "message": "Patient profile completed successfully.",
   "data": {
     "isProfileComplete": true,
-    "updatedAt": "2026-11-11T23:00:00Z"
+    "updatedAt": "2026-11-16T22:33:00Z"
   }
 }
 ```
 
 ---
 
-### 3.3 Update Permitted Personal Details
+### 4.3 Update Permitted Personal Details
 `PATCH /api/v1/patients/me/permitted-details`
 
-Allows patients to edit permitted personal details (phone, address, emergency contact) without altering clinical history.
+Allows editing contact details and emergency contacts without altering clinical records.
 
 #### Request Body
 ```json
 {
-  "phone": "+91 98765 99999",
+  "phone": "+919876599999",
   "address": "Bungalow 12, Koregaon Park, Pune – 411001",
   "emergencyContact": {
     "name": "Lakshmi Rao",
-    "phone": "+91 98765 88888",
+    "phone": "+919876588888",
     "relation": "Mother"
   }
 }
@@ -217,66 +350,109 @@ Allows patients to edit permitted personal details (phone, address, emergency co
 ```json
 {
   "status": "success",
-  "message": "Permitted details updated.",
+  "message": "Permitted details updated successfully.",
   "data": {
-    "phone": "+91 98765 99999",
+    "phone": "+919876599999",
     "address": "Bungalow 12, Koregaon Park, Pune – 411001",
     "emergencyContact": {
       "name": "Lakshmi Rao",
-      "phone": "+91 98765 88888",
+      "phone": "+919876588888",
       "relation": "Mother"
     },
-    "updatedAt": "2026-11-11T23:10:00Z"
+    "updatedAt": "2026-11-16T22:34:00Z"
   }
 }
 ```
 
 ---
 
-## 4. Clinical Records & FHIR Resources (`/records`)
+## 5. Clinical Records & FHIR Resources (`/records`)
 
-### 4.1 Get All Records (Aggregated)
-`GET /api/v1/records?kind=medication&status=active`
+### 5.1 Get All Records (Aggregated & Filterable)
+`GET /api/v1/records?kind=medication&status=active&limit=20`
 
 **Query Parameters**:
 - `kind`: `allergy` | `condition` | `medication` | `vaccination` | `report`
-- `status`: `active` | `resolved` | `completed`
+- `status`: `active` | `resolved` | `inactive` | `completed` | `discontinued`
+- `q`: Free-text search matching title, provider, or medication/condition name
 - `from`: `YYYY-MM-DD`
 - `to`: `YYYY-MM-DD`
+- `limit`: integer (default 20, max 100)
+- `cursor`: string for cursor-based pagination
+- `include`: `fhir` (optional, to include raw FHIR resources)
 
 #### Response (`200 OK`)
 ```json
 {
   "status": "success",
-  "total": 2,
   "data": [
     {
-      "id": "e05",
+      "id": "rec_05",
       "kind": "medication",
       "title": "Budesonide inhaler",
+      "short": "Budesonide",
       "detail": "200 mcg, twice daily. Preventer for asthma.",
       "date": "2024-01-15",
       "provider": "Dr. Rohan Kulkarni, Lifeline Clinic",
       "status": "active",
-      "fhirResource": {
-        "resourceType": "MedicationStatement",
-        "id": "med-stmt-05",
-        "status": "active",
-        "medicationCodeableConcept": {
-          "coding": [{ "system": "http://www.nlm.nih.gov/research/umls/rxnorm", "code": "19839", "display": "Budesonide" }]
-        }
-      }
+      "source": "practitioner"
     }
-  ]
+  ],
+  "meta": {
+    "total": 1,
+    "limit": 20,
+    "nextCursor": null,
+    "requestId": "req_01J0A1B2C6"
+  }
 }
 ```
 
 ---
 
-### 4.2 Record an Allergy
+### 5.2 Get Record Details by ID
+`GET /api/v1/records/{id}`
+
+Returns the full clinical event and its complete FHIR R4 representation.
+
+#### Response (`200 OK`)
+```json
+{
+  "status": "success",
+  "data": {
+    "id": "rec_05",
+    "kind": "medication",
+    "title": "Budesonide inhaler",
+    "short": "Budesonide",
+    "detail": "200 mcg, twice daily. Preventer for asthma.",
+    "date": "2024-01-15",
+    "provider": "Dr. Rohan Kulkarni, Lifeline Clinic",
+    "status": "active",
+    "source": "practitioner",
+    "fhirResource": {
+      "resourceType": "MedicationStatement",
+      "id": "med-stmt-05",
+      "status": "active",
+      "medicationCodeableConcept": {
+        "coding": [{
+          "system": "http://www.nlm.nih.gov/research/umls/rxnorm",
+          "code": "19839",
+          "display": "Budesonide"
+        }]
+      },
+      "dosage": [{
+        "text": "200 mcg, twice daily"
+      }]
+    }
+  }
+}
+```
+
+---
+
+### 5.3 Record an Allergy
 `POST /api/v1/records/allergies`
 
-Maps to FHIR `AllergyIntolerance` resource.
+Allows patient self-reporting (`source: self_reported`) or practitioner entry.
 
 #### Request Body
 ```json
@@ -286,8 +462,6 @@ Maps to FHIR `AllergyIntolerance` resource.
   "severity": "severe",
   "criticality": "high",
   "reaction": "Skin rash, hives, and bronchospasm",
-  "status": "active",
-  "identifiedDate": "2003-08-21",
   "provider": "Dr. S. Nair, Family Clinic",
   "notes": "Strictly avoid penicillin and beta-lactam antibiotics."
 }
@@ -297,9 +471,9 @@ Maps to FHIR `AllergyIntolerance` resource.
 ```json
 {
   "status": "success",
-  "message": "Allergy recorded.",
+  "message": "Allergy recorded successfully.",
   "data": {
-    "id": "alg-001",
+    "id": "rec_alg_001",
     "kind": "allergy",
     "title": "Penicillin",
     "category": "medication",
@@ -307,8 +481,10 @@ Maps to FHIR `AllergyIntolerance` resource.
     "criticality": "high",
     "reaction": "Skin rash, hives, and bronchospasm",
     "status": "active",
-    "identifiedDate": "2003-08-21",
+    "source": "self_reported",
+    "date": "2026-11-16",
     "provider": "Dr. S. Nair, Family Clinic",
+    "notes": "Strictly avoid penicillin and beta-lactam antibiotics.",
     "fhirId": "AllergyIntolerance/ai-001"
   }
 }
@@ -316,19 +492,17 @@ Maps to FHIR `AllergyIntolerance` resource.
 
 ---
 
-### 4.3 Get Saved Prescriptions (Time-Ordered)
+### 5.4 Get Saved Prescriptions
 `GET /api/v1/records/prescriptions`
-
-Returns saved medical prescriptions ordered chronologically (newest first).
 
 #### Response (`200 OK`)
 ```json
 {
   "status": "success",
-  "total": 2,
   "data": [
     {
-      "id": "rx-01",
+      "id": "rx_01",
+      "kind": "medication",
       "title": "Asthma Maintenance Prescription",
       "doctor": "Dr. Rohan Kulkarni",
       "organization": "Lifeline Pulmonology Clinic",
@@ -336,46 +510,73 @@ Returns saved medical prescriptions ordered chronologically (newest first).
       "status": "active",
       "fileType": "pdf",
       "fileName": "prescription_kulkarni_aug2026.pdf",
-      "fileSize": "412 KB",
-      "fileUrl": "https://storage.mediclaim.gov.in/prescriptions/rx-01.pdf",
+      "fileSizeBytes": 421888,
       "instructions": "Take 2 puffs daily in the morning.",
       "medications": [
         { "name": "Budesonide Inhaler", "dosage": "200 mcg", "frequency": "Twice daily", "duration": "90 days" }
       ]
     }
-  ]
+  ],
+  "meta": {
+    "total": 1
+  }
 }
 ```
 
 ---
 
-## 5. Document Ingestion & File Uploads (`/uploads`)
+### 5.5 Retract / Remove Prescription
+`DELETE /api/v1/records/prescriptions/{id}`
 
-### 5.1 Upload Prescription (PDF / Image)
-`POST /api/v1/uploads/prescriptions`  
-**Content-Type**: `multipart/form-data`
+Performs clinical retraction (`status: entered-in-error` / soft-delete) preserving full audit history.
 
-#### Form Data Parameters:
-- `file`: Binary file (`application/pdf`, `image/png`, `image/jpeg`)
-- `title`: string (e.g., "Consultation Prescription")
-- `doctor`: string (e.g., "Dr. Rohan Kulkarni")
-- `consultationDate`: `YYYY-MM-DD`
-- `organization`: string (optional)
-
-#### Response (`201 Created`)
+#### Response (`200 OK`)
 ```json
 {
   "status": "success",
-  "message": "Prescription uploaded, encrypted, and queued for OCR processing.",
+  "message": "Prescription retracted successfully."
+}
+```
+
+---
+
+### 5.6 Create Clinical Records (Practitioner Endpoints)
+- `POST /api/v1/records/conditions` (Condition / Diagnosis)
+- `POST /api/v1/records/medications` (Prescribed Medication)
+- `POST /api/v1/records/vaccinations` (Immunization entry)
+- `POST /api/v1/records/reports` (Diagnostic & Lab report entry)
+
+---
+
+## 6. Document Ingestion & File Storage (`/uploads` & `/documents`)
+
+### 6.1 Upload Prescription / Medical Document
+`POST /api/v1/uploads`  
+**Content-Type**: `multipart/form-data`  
+**Max File Size**: 10 MB  
+**Allowed Types**: `application/pdf`, `image/png`, `image/jpeg`
+
+#### Form Parameters:
+- `file`: Binary file data
+- `title`: string
+- `doctor`: string
+- `consultationDate`: `YYYY-MM-DD`
+- `organization`: string (optional)
+- `documentType`: `prescription` | `lab_report` | `discharge_summary`
+
+#### Response (`202 Accepted` or `201 Created`)
+```json
+{
+  "status": "success",
+  "message": "Document uploaded and queued for processing.",
   "data": {
-    "prescriptionId": "rx-20261111-001",
-    "documentId": "doc-9a8b7c-01",
+    "uploadId": "upl_20261116_001",
+    "documentId": "doc_9a8b7c01",
     "fileName": "chest_prescription.pdf",
     "fileType": "pdf",
     "fileSizeBytes": 421890,
-    "fileUrl": "https://storage.mediclaim.gov.in/prescriptions/enc_rx_001.pdf",
     "ocrStatus": "processing",
-    "date": "2026-11-11",
+    "date": "2026-11-16",
     "doctor": "Dr. Rohan Kulkarni"
   }
 }
@@ -383,51 +584,50 @@ Returns saved medical prescriptions ordered chronologically (newest first).
 
 ---
 
-## 6. Lifelong Timeline & Health Graph (`/timeline`)
+### 6.2 Stream / Download Authenticated Document Content
+`GET /api/v1/documents/{id}/content`
 
-### 6.1 Get Lifelong Medical Timeline
-`GET /api/v1/timeline`
+Streams decrypted document binary with `Cache-Control: no-store` and `Content-Disposition: inline`. Requires active session or authorized doctor grant.
 
-Returns the complete chronological health history from birth to death.
+---
+
+## 7. Lifelong Timeline & Health Graph (`/timeline`)
+
+### 7.1 Get Chronological Timeline
+`GET /api/v1/timeline?kind=vaccination&from=2020-01-01`
+
+Returns chronological health events from birth to present.
 
 #### Response (`200 OK`)
 ```json
 {
   "status": "success",
-  "patientId": "pat-001",
-  "dob": "1994-05-12",
-  "totalEvents": 17,
-  "data": [
-    {
-      "id": "e01",
-      "kind": "vaccination",
-      "title": "Tdap booster",
-      "detail": "Tetanus, diphtheria and pertussis booster. One dose.",
-      "date": "2026-09-02",
-      "provider": "Dr. Meera Iyer, Shivaji Park Clinic",
-      "ageAtEvent": "At 32 years",
-      "status": "active"
-    },
-    {
-      "id": "e17",
-      "kind": "report",
-      "title": "Birth record",
-      "detail": "Birth weight 3.1 kg. No complications.",
-      "date": "1994-05-12",
-      "provider": "Government Maternity Hospital",
-      "ageAtEvent": "At birth",
-      "status": "resolved"
-    }
-  ]
+  "data": {
+    "patientId": "pat_001",
+    "dob": "1994-05-12",
+    "totalEvents": 2,
+    "events": [
+      {
+        "id": "rec_01",
+        "kind": "vaccination",
+        "title": "Tdap booster",
+        "detail": "Tetanus, diphtheria and pertussis booster. One dose.",
+        "date": "2026-09-02",
+        "provider": "Dr. Meera Iyer, Shivaji Park Clinic",
+        "ageAtEventMonths": 387,
+        "status": "active"
+      }
+    ]
+  }
 }
 ```
 
 ---
 
-### 6.2 Get Health Graph Network Structure
-`GET /api/v1/timeline/graph?leaves=3`
+### 7.2 Get Health Graph Network Structure
+`GET /api/v1/timeline/graph`
 
-Returns nodes and edges for rendering radial/tree graph visualizations.
+Returns a normalized graph structure with nodes, categorical branches, and cross-resource clinical edges (e.g. condition treated by medication).
 
 #### Response (`200 OK`)
 ```json
@@ -438,23 +638,16 @@ Returns nodes and edges for rendering radial/tree graph visualizations.
       "patientName": "Ananya",
       "birthYear": "1994"
     },
+    "nodes": [
+      { "id": "rec_08", "kind": "condition", "label": "Asthma", "status": "active" },
+      { "id": "rec_05", "kind": "medication", "label": "Budesonide", "status": "active" }
+    ],
+    "edges": [
+      { "source": "rec_05", "target": "rec_08", "relation": "treats" }
+    ],
     "branches": [
-      {
-        "kind": "allergy",
-        "categoryLabel": "Allergies",
-        "nodes": [
-          { "id": "e11", "label": "Dust mites", "status": "active" },
-          { "id": "e14", "label": "Penicillin", "status": "active" }
-        ]
-      },
-      {
-        "kind": "condition",
-        "categoryLabel": "Conditions",
-        "nodes": [
-          { "id": "e08", "label": "Asthma", "status": "active" },
-          { "id": "e12", "label": "Appendicitis", "status": "resolved" }
-        ]
-      }
+      { "kind": "allergy", "categoryLabel": "Allergies", "total": 2 },
+      { "kind": "condition", "categoryLabel": "Conditions", "total": 3 }
     ]
   }
 }
@@ -462,18 +655,17 @@ Returns nodes and edges for rendering radial/tree graph visualizations.
 
 ---
 
-## 7. Doctor Consent & Access Control (`/consent`)
+## 8. Doctor Consent & Access Control (`/consent`)
 
-### 7.1 Request Temporary Access (Doctor Initiated)
-`POST /api/v1/consent/request`
+### 8.1 Request Temporary Access (Doctor Initiated)
+`POST /api/v1/consent/requests`
+
+The doctor's identity and organization are extracted securely from their JWT.
 
 #### Request Body
 ```json
 {
-  "patientMediclaimId": "4821 9306 1175",
-  "doctorId": "doc-dr-kulkarni-401",
-  "doctorName": "Dr. Farhan Ali",
-  "role": "Dermatologist, Skin & Care Centre",
+  "patientMediclaimId": "9481 2049 3817",
   "scope": ["allergy", "medication"],
   "durationHours": 2,
   "purpose": "Evaluation of acute allergic dermatitis"
@@ -484,15 +676,43 @@ Returns nodes and edges for rendering radial/tree graph visualizations.
 ```json
 {
   "status": "success",
-  "requestId": "req-98210",
-  "message": "Access request queued for patient authorization."
+  "message": "Access request queued for patient authorization.",
+  "data": {
+    "requestId": "req_98210",
+    "patientMediclaimId": "9481 2049 3817",
+    "expiresAt": "2026-11-17T22:30:00Z"
+  }
 }
 ```
 
 ---
 
-### 7.2 Patient Approves Request
-`POST /api/v1/consent/requests/{request_id}/approve`
+### 8.2 List Access Requests (Patient View)
+`GET /api/v1/consent/requests?status=pending`
+
+#### Response (`200 OK`)
+```json
+{
+  "status": "success",
+  "data": [
+    {
+      "id": "req_98210",
+      "name": "Dr. Farhan Ali",
+      "role": "Dermatologist, Skin & Care Centre",
+      "scope": ["allergy", "medication"],
+      "durationHours": 2,
+      "purpose": "Evaluation of acute allergic dermatitis",
+      "status": "pending",
+      "requestedAt": "2026-11-16T22:35:00Z"
+    }
+  ]
+}
+```
+
+---
+
+### 8.3 Patient Approves Access Request
+`POST /api/v1/consent/requests/{id}/approve`
 
 #### Request Body
 ```json
@@ -506,18 +726,96 @@ Returns nodes and edges for rendering radial/tree graph visualizations.
 ```json
 {
   "status": "success",
-  "grantId": "g-req-98210",
-  "validFrom": "2026-11-11T23:30:00Z",
-  "expiresAt": "2026-11-12T01:30:00Z",
-  "remaining": "2 h 0 min left",
-  "status": "active"
+  "message": "Doctor access approved.",
+  "data": {
+    "grantId": "grt_98210",
+    "grantStatus": "active",
+    "name": "Dr. Farhan Ali",
+    "role": "Dermatologist, Skin & Care Centre",
+    "scope": ["allergy", "medication"],
+    "validFrom": "2026-11-16T22:36:00Z",
+    "expiresAt": "2026-11-17T00:36:00Z"
+  }
 }
 ```
 
 ---
 
-### 7.3 Patient Revokes Access Immediately
-`DELETE /api/v1/consent/grants/{grant_id}`
+### 8.4 Patient Declines Access Request
+`POST /api/v1/consent/requests/{id}/decline`
+
+#### Response (`200 OK`)
+```json
+{
+  "status": "success",
+  "message": "Access request declined."
+}
+```
+
+---
+
+### 8.5 List Active and Past Grants
+`GET /api/v1/consent/grants`
+
+#### Response (`200 OK`)
+```json
+{
+  "status": "success",
+  "data": [
+    {
+      "id": "grt_98210",
+      "name": "Dr. Farhan Ali",
+      "role": "Dermatologist, Skin & Care Centre",
+      "scope": ["allergy", "medication"],
+      "validFrom": "2026-11-16T22:36:00Z",
+      "expiresAt": "2026-11-17T00:36:00Z",
+      "grantStatus": "active"
+    }
+  ]
+}
+```
+
+---
+
+### 8.6 Directly Give Access to Doctor
+`POST /api/v1/consent/grants`
+
+Patients can grant instant time-bounded access using a doctor's identifier.
+
+#### Request Body
+```json
+{
+  "practitionerId": "doc_dr_kulkarni_401",
+  "name": "Dr. Rohan Kulkarni",
+  "role": "Pulmonologist",
+  "scope": ["allergy", "medication", "condition"],
+  "durationHours": 2
+}
+```
+
+#### Response (`201 Created`)
+```json
+{
+  "status": "success",
+  "message": "Access granted.",
+  "data": {
+    "id": "grt_direct_01",
+    "name": "Dr. Rohan Kulkarni",
+    "role": "Pulmonologist",
+    "scope": ["allergy", "medication", "condition"],
+    "grantStatus": "active",
+    "validFrom": "2026-11-16T22:37:00Z",
+    "expiresAt": "2026-11-17T00:37:00Z"
+  }
+}
+```
+
+---
+
+### 8.7 Revoke Access Immediately
+`DELETE /api/v1/consent/grants/{id}`
+
+Terminates the grant immediately. All subsequent requests using the doctor token return `403 CONSENT_REVOKED`.
 
 #### Response (`200 OK`)
 ```json
@@ -529,19 +827,24 @@ Returns nodes and edges for rendering radial/tree graph visualizations.
 
 ---
 
-## 8. Emergency Break-Glass Access (`/emergency`)
+### 8.8 Caregiver Management
+- `GET /api/v1/consent/caregivers`: Lists assigned family caregivers.
+- `POST /api/v1/consent/caregivers`: Assigns a new caregiver with scoped permissions.
+- `DELETE /api/v1/consent/caregivers/{id}`: Revokes caregiver access.
+
+---
+
+## 9. Emergency Break-Glass Protocol (`/emergency`)
 
 `POST /api/v1/emergency/access`  
-**Authorization**: Government & Accredited Hospital Admin Only.
+**Authorization**: Accredited Emergency Practitioners & Hospital Admins.
 
-Provides immediate full access during life-or-death emergencies without prior patient OTP, while creating an immutable audit trail.
+Bypasses patient consent during life-or-death emergencies. Generates an immediate audit event, triggers SMS alert to patient & emergency contacts, and schedules mandatory review.
 
 #### Request Body
 ```json
 {
-  "patientMediclaimId": "4821 9306 1175",
-  "hospitalId": "gov-hosp-sion-01",
-  "attendingDoctorId": "doc-emergency-911",
+  "patientMediclaimId": "9481 2049 3817",
   "emergencyType": "TRAUMA_RESUSCITATION",
   "clinicalJustification": "Patient unconscious in ER following motor vehicle collision. Immediate allergy and blood group verification required."
 }
@@ -550,31 +853,34 @@ Provides immediate full access during life-or-death emergencies without prior pa
 #### Response (`200 OK`)
 ```json
 {
-  "status": "emergency_granted",
-  "auditTrackingId": "audit-emg-883921",
-  "emergencyToken": "eyJhbGciOi...",
-  "expiresInMinutes": 60,
-  "reviewMandatoryBefore": "2026-11-12T23:30:00Z",
+  "status": "success",
+  "message": "Emergency access authorized under break-glass protocol.",
   "data": {
-    "bloodGroup": "O+",
-    "criticalAllergies": [
-      { "allergen": "Penicillin", "severity": "severe", "reaction": "Bronchospasm & Angioedema" }
-    ],
-    "activeConditions": [
-      { "conditionName": "Asthma", "status": "active" }
-    ]
+    "emergencyStatus": "emergency_granted",
+    "auditTrackingId": "aud_emg_883921",
+    "expiresAt": "2026-11-16T23:37:00Z",
+    "reviewMandatoryBefore": "2026-11-17T23:37:00Z",
+    "criticalSummary": {
+      "bloodGroup": "O+",
+      "criticalAllergies": [
+        { "allergen": "Penicillin", "severity": "severe", "reaction": "Bronchospasm & Angioedema" }
+      ],
+      "activeConditions": [
+        { "conditionName": "Asthma", "status": "active" }
+      ]
+    }
   }
 }
 ```
 
 ---
 
-## 9. Audit Logging & Corrections (`/audit` & `/corrections`)
+## 10. Audit Logging & Clinical Corrections (`/audit` & `/corrections`)
 
-### 9.1 View Access History
-`GET /api/v1/audit/logs`
+### 10.1 View Audit Logs
+`GET /api/v1/audit/logs?limit=50`
 
-Returns a list of everyone who accessed, viewed, or uploaded records.
+Returns immutable audit events of who accessed or modified patient data.
 
 #### Response (`200 OK`)
 ```json
@@ -582,36 +888,35 @@ Returns a list of everyone who accessed, viewed, or uploaded records.
   "status": "success",
   "data": [
     {
-      "id": "l1",
+      "id": "aud_01",
+      "actorId": "usr_doc_01",
       "who": "Dr. Rohan Kulkarni",
       "actorRole": "Practitioner",
+      "action": "view",
       "what": "viewed conditions and medicines",
-      "when": "Today, 10:42",
-      "action": "view"
-    },
-    {
-      "id": "l2",
-      "who": "Dr. Meera Iyer",
-      "actorRole": "Practitioner",
-      "what": "viewed allergies and vaccinations",
-      "when": "Today, 09:15",
-      "action": "view"
+      "resourceKinds": ["condition", "medication"],
+      "occurredAt": "2026-11-16T10:42:00Z",
+      "outcome": "success"
     }
-  ]
+  ],
+  "meta": {
+    "total": 1
+  }
 }
 ```
 
 ---
 
-### 9.2 Request a Record Correction
+### 10.2 Request Clinical Correction
 `POST /api/v1/corrections`
 
-Patients can request corrections to medical records written by doctors.
+Patients request corrections to erroneous entries made by clinicians.
 
 #### Request Body
 ```json
 {
-  "recordId": "e08",
+  "recordId": "rec_08",
+  "recordTitle": "Asthma",
   "reason": "Date of onset was recorded as 2022, but symptoms first appeared in 2020.",
   "proposedCorrection": {
     "onsetDate": "2020-10-09"
@@ -623,37 +928,65 @@ Patients can request corrections to medical records written by doctors.
 ```json
 {
   "status": "success",
-  "correctionRequestId": "corr-40291",
-  "status": "under_review",
-  "message": "Correction request routed to Dr. Rohan Kulkarni for clinical review."
+  "message": "Correction request submitted for clinical review.",
+  "data": {
+    "id": "corr_40291",
+    "recordId": "rec_08",
+    "recordTitle": "Asthma",
+    "correctionStatus": "under_review",
+    "createdAt": "2026-11-16T22:38:00Z"
+  }
 }
 ```
 
 ---
 
-## 10. Standard Error Responses
+### 10.3 List and Review Corrections
+- `GET /api/v1/corrections`: Lists patient's submitted correction requests.
+- `GET /api/v1/corrections/{id}`: Details of a correction request.
+- `PATCH /api/v1/corrections/{id}`: Doctor approves/rejects the correction request.
+- `DELETE /api/v1/corrections/{id}`: Patient withdraws their correction request.
 
-All error responses adhere to RFC 7807 (Problem Details for HTTP APIs).
+---
+
+## 11. Doctor Portal Access (`/doctor`)
+
+When a doctor logs into their portal and accesses an authorized patient:
+- `GET /api/v1/doctor/patients/{mediclaim_id}`: Fetches authorized patient summary (if active grant exists).
+- `GET /api/v1/doctor/patients/{mediclaim_id}/records`: Fetches records filtered strictly by the granted scope. Attempts to access out-of-scope records return `403 SCOPE_UNAUTHORIZED`.
+
+---
+
+## 12. Standard Error Responses & Status Codes
+
+All error responses adhere to **RFC 9457 / RFC 7807** Problem Details served as `application/problem+json`:
 
 ```json
 {
-  "status": "error",
+  "type": "https://api.mediclaim.gov.in/problems/consent-expired",
+  "title": "Consent Expired",
+  "status": 403,
+  "detail": "The doctor access session has expired. Request fresh authorization.",
+  "instance": "/api/v1/records",
   "code": "CONSENT_EXPIRED",
-  "message": "The doctor access session has expired. Request fresh authorization.",
-  "details": {
-    "expiredAt": "2026-11-11T21:45:00Z",
-    "grantId": "g-req-98210"
-  }
+  "requestId": "req_01J0A1B2C7",
+  "errors": []
 }
 ```
 
-### Common Error Codes:
+### Standard Error Codes & HTTP Status:
 | HTTP Status | Error Code | Description |
 |---|---|---|
-| `400 Bad Request` | `VALIDATION_ERROR` | Required fields missing or invalid format (e.g. invalid Aadhaar length) |
-| `401 Unauthorized` | `INVALID_CREDENTIALS` | Invalid token, expired signature, or wrong password |
-| `403 Forbidden` | `SCOPE_UNAUTHORIZED` | Doctor attempted to access records outside approved consent scope |
-| `403 Forbidden` | `CONSENT_EXPIRED` | Time-bound consent window has ended |
-| `404 Not Found` | `RECORD_NOT_FOUND` | Clinical record or document ID does not exist |
-| `422 Unprocessable` | `PROFILE_INCOMPLETE` | User must complete profile before performing clinical operations |
-
+| `400 Bad Request` | `BAD_REQUEST` | Malformed syntax or missing required parameters |
+| `401 Unauthorized` | `INVALID_CREDENTIALS` | Invalid or missing token, wrong password, or expired signature |
+| `403 Forbidden` | `SCOPE_UNAUTHORIZED` | Attempted access to clinical record outside approved consent scope |
+| `403 Forbidden` | `CONSENT_EXPIRED` | Time-bound doctor grant duration has elapsed |
+| `403 Forbidden` | `CONSENT_REVOKED` | Grant was explicitly revoked by the patient |
+| `403 Forbidden` | `PROFILE_INCOMPLETE` | Patient must complete mandatory profile before accessing clinical data |
+| `404 Not Found` | `RECORD_NOT_FOUND` | Clinical record, document, or patient ID does not exist |
+| `409 Conflict` | `ACCOUNT_ALREADY_EXISTS` | Phone number or Aadhaar already registered |
+| `413 Payload Too Large` | `FILE_TOO_LARGE` | Document file exceeds maximum 10 MB limit |
+| `415 Unsupported Media` | `UNSUPPORTED_MEDIA_TYPE`| File format not permitted (must be PDF, PNG, or JPEG) |
+| `422 Unprocessable` | `VALIDATION_ERROR` | Request body validation failure (e.g. invalid date or phone format) |
+| `429 Too Many Requests` | `RATE_LIMIT_EXCEEDED` | Too many OTP or login attempts; back-off required |
+| `500 Server Error` | `INTERNAL_SERVER_ERROR` | An unexpected server error occurred |

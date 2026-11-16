@@ -149,11 +149,63 @@ def init_db() -> None:
                 date_of_birth date NOT NULL,
                 blood_group varchar(5),
                 gender varchar(30),
+                address text,
                 emergency_contact_name varchar(200),
                 emergency_contact_phone varchar(20),
+                emergency_contact_relation varchar(50),
                 created_at timestamp NOT NULL DEFAULT now(),
                 updated_at timestamp NOT NULL DEFAULT now()
             );
         """)
+        conn.execute("ALTER TABLE patient_profiles ADD COLUMN IF NOT EXISTS address text;")
+        conn.execute("ALTER TABLE patient_profiles ADD COLUMN IF NOT EXISTS emergency_contact_relation varchar(50);")
+
+        # Clinical records and allergy extensions
+        conn.execute("ALTER TABLE clinical_records ADD COLUMN IF NOT EXISTS source varchar(30) DEFAULT 'self_reported';")
+        conn.execute("ALTER TABLE clinical_records ADD COLUMN IF NOT EXISTS provider varchar(255);")
+        conn.execute("ALTER TABLE allergies ADD COLUMN IF NOT EXISTS category varchar(50);")
+        conn.execute("ALTER TABLE allergies ADD COLUMN IF NOT EXISTS criticality varchar(30);")
+
+        # Prescriptions metadata extensions
+        conn.execute("ALTER TABLE prescriptions ADD COLUMN IF NOT EXISTS title varchar(255);")
+        conn.execute("ALTER TABLE prescriptions ADD COLUMN IF NOT EXISTS doctor_name varchar(255);")
+        conn.execute("ALTER TABLE prescriptions ADD COLUMN IF NOT EXISTS organization_name varchar(255);")
+        conn.execute("ALTER TABLE prescriptions ADD COLUMN IF NOT EXISTS file_type varchar(50);")
+        conn.execute("ALTER TABLE prescriptions ADD COLUMN IF NOT EXISTS file_name varchar(255);")
+        conn.execute("ALTER TABLE prescriptions ADD COLUMN IF NOT EXISTS file_size_bytes bigint;")
+        conn.execute("ALTER TABLE prescriptions ADD COLUMN IF NOT EXISTS file_url text;")
+        # Make practitioner_id nullable on prescriptions for uploaded/self-reported prescriptions
+        conn.execute("ALTER TABLE prescriptions ALTER COLUMN practitioner_id DROP NOT NULL;")
+
+        # Access grants metadata extensions
+        conn.execute("ALTER TABLE patient_access_grants ADD COLUMN IF NOT EXISTS grantee_name varchar(255);")
+        conn.execute("ALTER TABLE patient_access_grants ADD COLUMN IF NOT EXISTS grantee_role varchar(255);")
+        conn.execute("ALTER TABLE patient_access_grants ADD COLUMN IF NOT EXISTS duration_hours integer;")
+        # Allow grantee_user_id to be nullable if direct grant by name/role
+        conn.execute("ALTER TABLE patient_access_grants ALTER COLUMN valid_from DROP NOT NULL;")
+
+        # Audit and corrections extensions
+        conn.execute("ALTER TABLE audit_events DROP CONSTRAINT IF EXISTS audit_events_check;")
+        conn.execute("ALTER TABLE record_correction_requests ADD COLUMN IF NOT EXISTS record_title varchar(255);")
+        conn.execute("ALTER TABLE record_correction_requests ADD COLUMN IF NOT EXISTS proposed_text text;")
+        conn.execute("ALTER TABLE record_correction_requests ADD COLUMN IF NOT EXISTS review_notes text;")
+
+        # Caregivers table
+        conn.execute("""
+            CREATE TABLE IF NOT EXISTS patient_caregivers (
+                id uuid PRIMARY KEY DEFAULT gen_random_uuid(),
+                patient_id uuid NOT NULL REFERENCES patient_profiles(id) ON DELETE CASCADE,
+                name varchar(200) NOT NULL,
+                relation varchar(100) NOT NULL,
+                scope text[] NOT NULL,
+                since date NOT NULL DEFAULT CURRENT_DATE,
+                created_at timestamp NOT NULL DEFAULT now(),
+                deleted_at timestamp
+            );
+        """)
+
+
+
+
 
     logger.info("PostgreSQL database initialized and verified.")
