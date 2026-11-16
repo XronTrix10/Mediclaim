@@ -15,6 +15,8 @@ from app.exceptions import (
 from app.routes.auth import router as auth_router
 from app.routes.patients import router as patients_router
 from app.routes.records import router as records_router
+from app.routes.timeline import router as timeline_router
+
 
 
 
@@ -59,6 +61,8 @@ def shutdown():
 app.include_router(auth_router, prefix="/api/v1/auth", tags=["Authentication"])
 app.include_router(patients_router, prefix="/api/v1/patients", tags=["Patients"])
 app.include_router(records_router, prefix="/api/v1/records", tags=["Clinical Records"])
+app.include_router(timeline_router, prefix="/api/v1/timeline", tags=["Timeline & Graph"])
+
 
 
 
