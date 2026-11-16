@@ -1047,11 +1047,162 @@ Returns aggregated healthcare network metrics.
 
 ## 12. Doctor & Hospital Portal Access (`/doctor` & `/hospital`)
 
-When a doctor logs into their portal and accesses an authorized patient:
-- `GET /api/v1/doctor/patients`: Lists all patients who have granted active consent to this doctor.
-- `GET /api/v1/doctor/patients/{mediclaim_id}`: Fetches authorized patient summary (if active grant exists).
-- `GET /api/v1/doctor/patients/{mediclaim_id}/records`: Fetches records filtered strictly by the granted scope. Attempts to access out-of-scope records return `403 SCOPE_UNAUTHORIZED`.
-- `POST /api/v1/doctor/requests`: Doctor submits access request for a patient by Mediclaim ID.
+The Doctor & Hospital Portal APIs enable licensed medical practitioners and hospital administrators to manage clinical records, submit and monitor access requests, record encounters, conditions, prescriptions, diagnostic reports, and immunizations under active patient consent, and manage healthcare organizations and practitioner affiliations.
+
+### Doctor Portal Endpoints (`/api/v1/doctor`)
+
+All endpoints in this group require authentication with the `doctor` or `practitioner` role (or `admin`).
+
+#### 1. List Authorized Patients
+- **Method / Path**: `GET /api/v1/doctor/patients`
+- **Description**: Returns all patients who currently have an active, non-expired access grant permitted to this practitioner.
+- **Success Status**: `200 OK`
+- **Response**:
+```json
+{
+  "status": "success",
+  "data": [
+    {
+      "patientProfileId": "pat_8c9aeeae-...",
+      "mediclaimId": "1234 5678 9012",
+      "fullName": "Rohan Das",
+      "gender": "male",
+      "dateOfBirth": "1991-07-14",
+      "bloodGroup": "O+",
+      "grantId": "grt_e5f6a1b2-...",
+      "approvedScopes": ["condition", "medication"],
+      "expiresAt": "2026-11-17T08:00:00Z"
+    }
+  ],
+  "meta": { "requestId": "req_01J0A1B2C8", "serverTime": "2026-11-17T00:30:00Z", "total": 1 }
+}
+```
+
+#### 2. Get Authorized Patient Summary
+- **Method / Path**: `GET /api/v1/doctor/patients/{mediclaim_id}`
+- **Description**: Retrieves demographic summary for an authorized patient. Requires active consent grant.
+- **Success Status**: `200 OK`
+
+#### 3. Get Patient Clinical Records (Scoped)
+- **Method / Path**: `GET /api/v1/doctor/patients/{mediclaim_id}/records?kind={kind}`
+- **Description**: Retrieves clinical records filtered strictly by the patient's approved scopes. Querying an unapproved scope returns `403 SCOPE_UNAUTHORIZED`.
+- **Success Status**: `200 OK`
+
+#### 4. Submit Access Request
+- **Method / Path**: `POST /api/v1/doctor/requests`
+- **Description**: Submits an access request to a patient by 12-digit Mediclaim ID.
+- **Success Status**: `202 Accepted`
+- **Request Body**:
+```json
+{
+  "patientMediclaimId": "1234 5678 9012",
+  "scope": ["condition", "medication"],
+  "durationHours": 8,
+  "purpose": "Cardiology consultation and prescription review."
+}
+```
+
+#### 5. List Doctor's Access Requests
+- **Method / Path**: `GET /api/v1/doctor/requests?status={all|pending|active|revoked}`
+- **Description**: Queries access requests initiated by this doctor.
+- **Success Status**: `200 OK`
+
+#### 6. Record Clinical Encounter
+- **Method / Path**: `POST /api/v1/doctor/patients/{mediclaim_id}/encounters`
+- **Description**: Records consultation note/encounter with patient.
+- **Success Status**: `201 Created`
+- **Request Body**:
+```json
+{
+  "encounterType": "outpatient",
+  "reason": "Routine hypertensive follow-up consultation",
+  "diagnosisSummary": "Controlled Essential Hypertension",
+  "startTime": "2026-11-17T10:00:00Z",
+  "endTime": "2026-11-17T10:30:00Z",
+  "status": "completed"
+}
+```
+
+#### 7. Diagnose Condition (Scoped)
+- **Method / Path**: `POST /api/v1/doctor/patients/{mediclaim_id}/conditions`
+- **Description**: Records a diagnosed medical condition. Requires `'condition'` in approved scope.
+- **Success Status**: `201 Created`
+
+#### 8. Issue Prescription (Scoped)
+- **Method / Path**: `POST /api/v1/doctor/patients/{mediclaim_id}/prescriptions`
+- **Description**: Issues official prescription with items, dosages, and schedules. Requires `'medication'` in approved scope.
+- **Success Status**: `201 Created`
+
+#### 9. Order Diagnostic Report (Scoped)
+- **Method / Path**: `POST /api/v1/doctor/patients/{mediclaim_id}/reports`
+- **Description**: Records diagnostic test report. Requires `'report'` in approved scope.
+- **Success Status**: `201 Created`
+
+#### 10. Record Vaccination (Scoped)
+- **Method / Path**: `POST /api/v1/doctor/patients/{mediclaim_id}/vaccinations`
+- **Description**: Records administered immunization. Requires `'vaccination'` in approved scope.
+- **Success Status**: `201 Created`
+
+---
+
+### Hospital & Organization Management Endpoints (`/api/v1/hospital`)
+
+Endpoints for managing medical facilities, clinics, and affiliated medical personnel.
+
+#### 1. List Healthcare Organizations
+- **Method / Path**: `GET /api/v1/hospital/organizations?q={name}&page=1&limit=20`
+- **Description**: Paginated list of registered healthcare organizations with affiliated doctor counts.
+- **Success Status**: `200 OK`
+
+#### 2. Register Healthcare Organization
+- **Method / Path**: `POST /api/v1/hospital/organizations`
+- **Description**: Registers a hospital, clinic, pharmacy, or diagnostic lab. Requires `admin` or `hospital_admin`.
+- **Success Status**: `201 Created`
+- **Request Body**:
+```json
+{
+  "name": "Apex Super Specialty Hospital",
+  "organizationType": "hospital",
+  "registrationNumber": "HOSP-REG-489201",
+  "address": "Sector 62, Noida, Uttar Pradesh",
+  "phone": "+911204000100",
+  "email": "contact@apexhospital.in"
+}
+```
+
+#### 3. Get Organization Profile
+- **Method / Path**: `GET /api/v1/hospital/organizations/{org_id}`
+- **Description**: Organization details and list of affiliated practitioners.
+- **Success Status**: `200 OK`
+
+#### 4. List Practitioners
+- **Method / Path**: `GET /api/v1/hospital/practitioners?organizationId={id}&specialization={spec}&q={query}`
+- **Description**: Paginated list of registered doctors with specialty and hospital affiliation.
+- **Success Status**: `200 OK`
+
+#### 5. Onboard Practitioner
+- **Method / Path**: `POST /api/v1/hospital/practitioners`
+- **Description**: Registers a new practitioner with medical council registration number and creates their doctor account. Requires `admin` or `hospital_admin`.
+- **Success Status**: `201 Created`
+- **Request Body**:
+```json
+{
+  "fullName": "Dr. Maya Sen",
+  "phone": "+919500011122",
+  "email": "maya@apexhospital.in",
+  "password": "SecurePassword123!",
+  "registrationNumber": "MCI-789456",
+  "specialization": "Neurology",
+  "qualification": "MBBS, DM Neurology",
+  "organizationId": "org_...",
+  "designation": "Senior Neurologist"
+}
+```
+
+#### 6. Get Practitioner Profile
+- **Method / Path**: `GET /api/v1/hospital/practitioners/{practitioner_id}`
+- **Description**: Retrieves full credentials, registration number, and hospital memberships.
+- **Success Status**: `200 OK`
 
 ---
 

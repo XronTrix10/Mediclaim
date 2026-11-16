@@ -3,8 +3,19 @@ import uuid
 from typing import Optional
 from fastapi import APIRouter, Depends, Query, status
 from app.schemas.auth import EnvelopeMeta
-from app.services.consent_service import doctor_access_patient
+from app.schemas.doctor import (
+    DoctorPatientsListResponse, DoctorAccessRequestInput, DoctorRequestsListResponse,
+    DoctorEncounterInput, DoctorConditionInput, DoctorPrescriptionInput,
+    DoctorReportInput, DoctorVaccinationInput,
+)
+from app.services.consent_service import doctor_access_patient, create_access_request
+from app.services.doctor_service import (
+    list_doctor_patients, list_doctor_requests,
+    record_encounter, record_condition, record_prescription,
+    record_report, record_vaccination,
+)
 from app.security import get_current_user, AuthenticatedUser
+from app.exceptions import APIProblemException
 
 router = APIRouter()
 
@@ -17,11 +28,35 @@ def _make_meta(total: Optional[int] = None) -> EnvelopeMeta:
     )
 
 
+def _require_doctor(user: AuthenticatedUser) -> None:
+    if not user.has_role("doctor", "practitioner", "admin"):
+        raise APIProblemException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            title="Access Denied",
+            detail="Practitioner or Administrator privileges required.",
+            code="UNAUTHORIZED_ROLE",
+        )
+
+
+@router.get("/patients", response_model=DoctorPatientsListResponse, status_code=status.HTTP_200_OK)
+def get_authorized_patients(
+    current_user: AuthenticatedUser = Depends(get_current_user),
+):
+    _require_doctor(current_user)
+    patients = list_doctor_patients(current_user)
+    return {
+        "status": "success",
+        "data": patients,
+        "meta": _make_meta(total=len(patients)),
+    }
+
+
 @router.get("/patients/{mediclaim_id}", status_code=status.HTTP_200_OK)
 def get_authorized_patient(
     mediclaim_id: str,
     current_user: AuthenticatedUser = Depends(get_current_user),
 ):
+    _require_doctor(current_user)
     data = doctor_access_patient(current_user, mediclaim_id)
     return {
         "status": "success",
@@ -36,6 +71,7 @@ def get_authorized_records(
     kind: Optional[str] = Query(None, description="Optional kind filter; must be within approved scope"),
     current_user: AuthenticatedUser = Depends(get_current_user),
 ):
+    _require_doctor(current_user)
     clean_kind = kind if isinstance(kind, str) else None
     data = doctor_access_patient(current_user, mediclaim_id, requested_kind=clean_kind)
     return {
@@ -44,7 +80,117 @@ def get_authorized_records(
             "patient": data["patient"],
             "approvedScopes": data["approvedScopes"],
             "expiresAt": data["expiresAt"],
-            "records": data["records"]
+            "records": data["records"],
         },
         "meta": _make_meta(total=len(data["records"])),
+    }
+
+
+@router.post("/requests", status_code=status.HTTP_202_ACCEPTED)
+def submit_access_request(
+    payload: DoctorAccessRequestInput,
+    current_user: AuthenticatedUser = Depends(get_current_user),
+):
+    _require_doctor(current_user)
+    data = create_access_request(current_user, payload)
+    return {
+        "status": "success",
+        "message": "Access request queued for patient authorization.",
+        "data": data,
+        "meta": _make_meta(),
+    }
+
+
+@router.get("/requests", response_model=DoctorRequestsListResponse, status_code=status.HTTP_200_OK)
+def get_doctor_access_requests(
+    status: Optional[str] = Query("all", description="all | pending | active | revoked"),
+    current_user: AuthenticatedUser = Depends(get_current_user),
+):
+    _require_doctor(current_user)
+    clean_status = status if isinstance(status, str) else "all"
+    requests = list_doctor_requests(current_user, status_filter=clean_status)
+    return {
+        "status": "success",
+        "data": requests,
+        "meta": _make_meta(total=len(requests)),
+    }
+
+
+@router.post("/patients/{mediclaim_id}/encounters", status_code=status.HTTP_201_CREATED)
+def create_encounter(
+    mediclaim_id: str,
+    payload: DoctorEncounterInput,
+    current_user: AuthenticatedUser = Depends(get_current_user),
+):
+    _require_doctor(current_user)
+    data = record_encounter(current_user, mediclaim_id, payload)
+    return {
+        "status": "success",
+        "message": "Encounter record saved.",
+        "data": data,
+        "meta": _make_meta(),
+    }
+
+
+@router.post("/patients/{mediclaim_id}/conditions", status_code=status.HTTP_201_CREATED)
+def create_condition(
+    mediclaim_id: str,
+    payload: DoctorConditionInput,
+    current_user: AuthenticatedUser = Depends(get_current_user),
+):
+    _require_doctor(current_user)
+    data = record_condition(current_user, mediclaim_id, payload)
+    return {
+        "status": "success",
+        "message": "Condition diagnosed and recorded.",
+        "data": data,
+        "meta": _make_meta(),
+    }
+
+
+@router.post("/patients/{mediclaim_id}/prescriptions", status_code=status.HTTP_201_CREATED)
+def create_prescription(
+    mediclaim_id: str,
+    payload: DoctorPrescriptionInput,
+    current_user: AuthenticatedUser = Depends(get_current_user),
+):
+    _require_doctor(current_user)
+    data = record_prescription(current_user, mediclaim_id, payload)
+    return {
+        "status": "success",
+        "message": "Prescription issued.",
+        "data": data,
+        "meta": _make_meta(),
+    }
+
+
+@router.post("/patients/{mediclaim_id}/reports", status_code=status.HTTP_201_CREATED)
+def create_report(
+    mediclaim_id: str,
+    payload: DoctorReportInput,
+    current_user: AuthenticatedUser = Depends(get_current_user),
+):
+    _require_doctor(current_user)
+    data = record_report(current_user, mediclaim_id, payload)
+    return {
+        "status": "success",
+        "message": "Diagnostic report recorded.",
+        "data": data,
+        "meta": _make_meta(),
+    }
+
+
+@router.post("/patients/{mediclaim_id}/vaccinations", status_code=status.HTTP_201_CREATED)
+def create_vaccination(
+    mediclaim_id: str,
+    payload: DoctorVaccinationInput,
+    current_user: AuthenticatedUser = Depends(get_current_user),
+):
+    _require_doctor(current_user)
+    data = record_vaccination(current_user, mediclaim_id, payload)
+    return {
+        "status": "success",
+        "message": "Vaccination record saved.",
+        "data": data,
+        "meta": _make_meta(),
     }
