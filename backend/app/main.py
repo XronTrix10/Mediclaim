@@ -1,21 +1,47 @@
-from fastapi import FastAPI
+import uuid
+from fastapi import FastAPI, Request
+from fastapi.exceptions import RequestValidationError
 from fastapi.middleware.cors import CORSMiddleware
-from app.routes.auth import router as auth_router
+from starlette.exceptions import HTTPException as StarletteHTTPException
+
 from app.database import init_db, close_pool
+from app.exceptions import (
+    APIProblemException,
+    api_problem_exception_handler,
+    http_exception_handler,
+    validation_exception_handler,
+    unhandled_exception_handler,
+)
+from app.routes.auth import router as auth_router
 
 app = FastAPI(
-    title="Mediclaim Authentication API",
-    description="Authentication and onboarding endpoints from the Mediclaim API contract.",
-    version="1.0.0",
+    title="Mediclaim Healthcare API",
+    description="Backend API conforming to HL7 FHIR R4 and the Mediclaim Specification.",
+    version="2.0.0",
 )
 
+# Attach request ID to state for tracing
+@app.middleware("http")
+async def add_request_id_middleware(request: Request, call_next):
+    request.state.request_id = f"req_{uuid.uuid4().hex[:12]}"
+    response = await call_next(request)
+    response.headers["X-Request-ID"] = request.state.request_id
+    return response
+
+# CORS configuration
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=["*"],  # Restrict to your frontend origin in production.
+    allow_origins=["*"],
     allow_credentials=True,
     allow_methods=["*"],
     allow_headers=["*"],
 )
+
+# Exception handlers adhering to RFC 9457 / RFC 7807
+app.add_exception_handler(APIProblemException, api_problem_exception_handler)
+app.add_exception_handler(RequestValidationError, validation_exception_handler)
+app.add_exception_handler(StarletteHTTPException, http_exception_handler)
+app.add_exception_handler(Exception, unhandled_exception_handler)
 
 @app.on_event("startup")
 def startup():
@@ -25,6 +51,7 @@ def startup():
 def shutdown():
     close_pool()
 
+# Include routers
 app.include_router(auth_router, prefix="/api/v1/auth", tags=["Authentication"])
 
 @app.get("/health", tags=["Health"])
