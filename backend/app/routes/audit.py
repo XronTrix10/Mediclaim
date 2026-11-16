@@ -30,6 +30,8 @@ def _get_patient_id(user: AuthenticatedUser) -> str:
     return user.patient_profile_id
 
 
+@router.get("", response_model=AuditLogsResponse, status_code=status.HTTP_200_OK)
+@router.get("/", response_model=AuditLogsResponse, status_code=status.HTTP_200_OK)
 @router.get("/logs", response_model=AuditLogsResponse, status_code=status.HTTP_200_OK)
 def get_audit_logs(
     limit: int = 50,

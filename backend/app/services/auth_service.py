@@ -108,11 +108,11 @@ def register_user(payload) -> Dict[str, Any]:
 
     return {
         "userId": user_id,
-        "mediclaimId": formatted_mediclaim_id,
         "phone": payload.phone,
         "accountStatus": "pending_otp",
         "otpSent": True,
         "otpExpiresInSeconds": OTP_SECONDS,
+        "debugOtp": otp if OTP_DEBUG else None,
     }
 
 
@@ -171,24 +171,14 @@ def verify_user_otp(payload) -> Dict[str, Any]:
             (str(user_uuid),)
         )
         formatted_user_id = f"usr_{user['id']}"
-        med_id_val = user.get("mediclaim_id") or user.get("public_id")
-        token = create_access_token(formatted_user_id, role="patient")
 
         return {
-            "accessToken": token,
-            "tokenType": "Bearer",
-            "expiresIn": ACCESS_TOKEN_SECONDS,
-            "user": {
-                "id": formatted_user_id,
-                "fullName": user["full_name"],
-                "email": user.get("email"),
-                "phone": user["phone"],
-                "role": "patient",
-                "mediclaimId": format_mediclaim_id(med_id_val) if med_id_val else None,
-                "isActive": bool(user["is_active"]),
-                "adminVerified": bool(user["admin_verified"]),
-                "isProfileComplete": bool(user["profile_complete"]),
-            }
+            "userId": formatted_user_id,
+            "phone": user["phone"],
+            "accountStatus": "pending_admin_approval",
+            "phoneVerified": True,
+            "adminVerified": bool(user["admin_verified"]),
+            "message": "Phone number verified successfully. Your account is pending admin verification.",
         }
 
 
@@ -261,6 +251,15 @@ def login_user(payload) -> Dict[str, Any]:
             code="BAD_REQUEST"
         )
 
+    # Verify administrator verification status
+    if not user.get("admin_verified"):
+        raise APIProblemException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            title="Account Pending Approval",
+            detail="Your account is pending verification by an administrator. You will receive your Mediclaim ID via email or SMS once approved.",
+            code="ACCOUNT_PENDING_APPROVAL"
+        )
+
     # Retrieve user's active role
     with get_db() as conn:
         role_row = conn.execute(
@@ -322,6 +321,7 @@ def request_login_otp(payload) -> Dict[str, Any]:
     return {
         "maskedPhone": _mask_phone(user["phone"]),
         "otpExpiresInSeconds": OTP_SECONDS,
+        "debugOtp": otp if OTP_DEBUG else None,
     }
 
 

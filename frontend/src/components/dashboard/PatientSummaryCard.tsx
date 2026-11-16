@@ -1,9 +1,19 @@
 import { useEffect, useState } from 'react'
 import type { FormEvent } from 'react'
 import Icon from '../Icon'
-import { button, card, input, label, textarea } from '../../lib/ui'
+import { button, card, input, label, select, textarea } from '../../lib/ui'
 import { bloodGroupLabel, formatAge, formatDate, isValidPhone } from '../../lib/format'
-import type { PatientProfile, PermittedPersonalDetailsUpdate } from '../../types'
+import type { EmergencyRelation, PatientProfile, PermittedPersonalDetailsUpdate } from '../../types'
+
+const emergencyRelations: EmergencyRelation[] = [
+  'Parent',
+  'Spouse',
+  'Sibling',
+  'Child',
+  'Friend',
+  'Guardian',
+  'Other',
+]
 
 interface PatientSummaryCardProps {
   profile: PatientProfile
@@ -14,8 +24,12 @@ export default function PatientSummaryCard({ profile, onUpdatePermittedDetails }
   const [isEditing, setIsEditing] = useState(false)
   const [phone, setPhone] = useState(profile.phone)
   const [address, setAddress] = useState(profile.address)
-  const [emergencyPhone, setEmergencyPhone] = useState(profile.emergencyContact.phone)
-  const [errors, setErrors] = useState<{ phone?: string; emergencyPhone?: string }>({})
+  const [emergencyName, setEmergencyName] = useState(profile.emergencyContact?.name ?? '')
+  const [emergencyRelation, setEmergencyRelation] = useState<EmergencyRelation>(
+    (profile.emergencyContact?.relation as EmergencyRelation) || 'Parent',
+  )
+  const [emergencyPhone, setEmergencyPhone] = useState(profile.emergencyContact?.phone ?? '')
+  const [errors, setErrors] = useState<{ phone?: string; emergencyName?: string; emergencyPhone?: string }>({})
   const [saved, setSaved] = useState(false)
 
   useEffect(() => {
@@ -28,7 +42,9 @@ export default function PatientSummaryCard({ profile, onUpdatePermittedDetails }
     // Always start from the saved values, so a cancelled edit never leaves stale text behind.
     setPhone(profile.phone)
     setAddress(profile.address)
-    setEmergencyPhone(profile.emergencyContact.phone)
+    setEmergencyName(profile.emergencyContact?.name ?? '')
+    setEmergencyRelation((profile.emergencyContact?.relation as EmergencyRelation) || 'Parent')
+    setEmergencyPhone(profile.emergencyContact?.phone ?? '')
     setErrors({})
     setIsEditing(true)
   }
@@ -37,6 +53,7 @@ export default function PatientSummaryCard({ profile, onUpdatePermittedDetails }
     e.preventDefault()
     const next: typeof errors = {}
     if (!isValidPhone(phone)) next.phone = 'Enter a valid phone number, for example +91 98765 43210.'
+    if (!emergencyName.trim()) next.emergencyName = 'Enter contact name.'
     if (!isValidPhone(emergencyPhone)) next.emergencyPhone = 'Enter a valid phone number.'
     setErrors(next)
     if (Object.keys(next).length > 0) return
@@ -44,7 +61,11 @@ export default function PatientSummaryCard({ profile, onUpdatePermittedDetails }
     onUpdatePermittedDetails({
       phone: phone.trim(),
       address: address.trim(),
-      emergencyContact: { ...profile.emergencyContact, phone: emergencyPhone.trim() },
+      emergencyContact: {
+        name: emergencyName.trim(),
+        relation: emergencyRelation,
+        phone: emergencyPhone.trim(),
+      },
     })
     setIsEditing(false)
     setSaved(true)
@@ -108,7 +129,7 @@ export default function PatientSummaryCard({ profile, onUpdatePermittedDetails }
             You can change your phone numbers and address. Clinical details can only be changed by your doctors.
           </p>
           <div className="grid gap-4 sm:grid-cols-2">
-            <div className="grid gap-1.5">
+            <div className="grid gap-1.5 sm:col-span-2">
               <label htmlFor="edit-phone" className={label}>
                 Your phone
               </label>
@@ -130,27 +151,69 @@ export default function PatientSummaryCard({ profile, onUpdatePermittedDetails }
                 </span>
               )}
             </div>
-            <div className="grid gap-1.5">
-              <label htmlFor="edit-ephone" className={label}>
-                Emergency phone ({profile.emergencyContact.name})
-              </label>
-              <input
-                id="edit-ephone"
-                type="tel"
-                inputMode="tel"
-                className={input}
-                value={emergencyPhone}
-                onChange={(e) => setEmergencyPhone(e.target.value)}
-                aria-invalid={!!errors.emergencyPhone}
-                aria-describedby={errors.emergencyPhone ? 'edit-ephone-err' : undefined}
-                required
-              />
-              {errors.emergencyPhone && (
-                <span id="edit-ephone-err" className="text-xs text-allergy-ink">
-                  {errors.emergencyPhone}
-                </span>
-              )}
-            </div>
+
+            <fieldset className="grid gap-3.5 rounded-[18px] border border-line bg-white/70 p-4 sm:col-span-2">
+              <legend className="px-1 text-[0.9rem] font-semibold text-ink">Emergency Contact Details</legend>
+              <div className="grid gap-4 sm:grid-cols-3">
+                <div className="grid gap-1.5">
+                  <label htmlFor="edit-ename" className={label}>
+                    Contact Name
+                  </label>
+                  <input
+                    id="edit-ename"
+                    type="text"
+                    className={input}
+                    value={emergencyName}
+                    onChange={(e) => setEmergencyName(e.target.value)}
+                    placeholder="For example, Lakshmi Rao"
+                    required
+                  />
+                  {errors.emergencyName && (
+                    <span className="text-xs text-allergy-ink">{errors.emergencyName}</span>
+                  )}
+                </div>
+                <div className="grid gap-1.5">
+                  <label htmlFor="edit-erel" className={label}>
+                    Relationship
+                  </label>
+                  <select
+                    id="edit-erel"
+                    className={select}
+                    value={emergencyRelation}
+                    onChange={(e) => setEmergencyRelation(e.target.value as EmergencyRelation)}
+                  >
+                    {emergencyRelations.map((rel) => (
+                      <option key={rel} value={rel}>
+                        {rel}
+                      </option>
+                    ))}
+                  </select>
+                </div>
+                <div className="grid gap-1.5">
+                  <label htmlFor="edit-ephone" className={label}>
+                    Phone Number
+                  </label>
+                  <input
+                    id="edit-ephone"
+                    type="tel"
+                    inputMode="tel"
+                    className={input}
+                    value={emergencyPhone}
+                    onChange={(e) => setEmergencyPhone(e.target.value)}
+                    aria-invalid={!!errors.emergencyPhone}
+                    aria-describedby={errors.emergencyPhone ? 'edit-ephone-err' : undefined}
+                    placeholder="+91 98765 12345"
+                    required
+                  />
+                  {errors.emergencyPhone && (
+                    <span id="edit-ephone-err" className="text-xs text-allergy-ink">
+                      {errors.emergencyPhone}
+                    </span>
+                  )}
+                </div>
+              </div>
+            </fieldset>
+
             <div className="grid gap-1.5 sm:col-span-2">
               <label htmlFor="edit-address" className={label}>
                 Address

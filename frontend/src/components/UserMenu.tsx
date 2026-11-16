@@ -1,9 +1,9 @@
 import { useEffect, useRef, useState } from 'react'
-import { Link } from 'react-router-dom'
 import Icon from './Icon'
 import { useHealthData } from '../store/healthData'
 import { avatar } from '../lib/ui'
 import { initials } from '../lib/format'
+import { authApi } from '../api/auth'
 
 /** Account menu for small screens, where the sidebar's profile block and Sign out are not shown. */
 export default function UserMenu() {
@@ -45,13 +45,17 @@ export default function UserMenu() {
             <strong className="block truncate text-[0.95rem] font-semibold">{profile.fullName}</strong>
             <small className="block text-[0.8rem] text-ink-faint">ID {profile.mediclaimId}</small>
           </div>
-          <Link
-            to="/auth"
-            className="flex items-center gap-2.5 rounded-[14px] px-3 py-2.5 text-[0.92rem] text-ink-soft transition-colors hover:bg-mist hover:text-ink"
+          <button
+            type="button"
+            onClick={async () => {
+              await authApi.logout()
+              window.location.href = '/auth'
+            }}
+            className="flex w-full items-center gap-2.5 rounded-[14px] px-3 py-2.5 text-[0.92rem] text-ink-soft transition-colors hover:bg-mist hover:text-ink text-left cursor-pointer"
           >
             <Icon name="logout" size={18} />
             Sign out
-          </Link>
+          </button>
         </div>
       )}
     </div>

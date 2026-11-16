@@ -5,6 +5,7 @@ import Logo from './Logo'
 import { useHealthData } from '../store/healthData'
 import { initials } from '../lib/format'
 import { avatar } from '../lib/ui'
+import { authApi } from '../api/auth'
 
 interface NavItem {
   to: string
@@ -52,13 +53,17 @@ export default function Sidebar() {
           <small className="block truncate text-[0.78rem] text-ink-faint">ID {profile.mediclaimId}</small>
         </div>
       </div>
-      <Link
-        to="/auth"
-        className="hidden items-center gap-2.5 rounded-[14px] px-4 py-2.5 text-[0.9rem] text-ink-faint transition-colors hover:bg-mist hover:text-ink min-[901px]:flex"
+      <button
+        type="button"
+        onClick={async () => {
+          await authApi.logout()
+          window.location.href = '/auth'
+        }}
+        className="hidden items-center gap-2.5 rounded-[14px] px-4 py-2.5 text-[0.9rem] text-ink-faint transition-colors hover:bg-mist hover:text-ink min-[901px]:flex text-left cursor-pointer"
       >
         <Icon name="logout" size={18} />
         Sign out
-      </Link>
+      </button>
     </aside>
   )
 }

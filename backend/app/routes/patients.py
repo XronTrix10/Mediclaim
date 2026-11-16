@@ -32,6 +32,7 @@ def get_my_profile(current_user: AuthenticatedUser = Depends(get_current_user)):
 
 
 @router.post("/me/complete-profile", response_model=CompleteProfileResponse, status_code=status.HTTP_200_OK)
+@router.post("/me/complete", response_model=CompleteProfileResponse, status_code=status.HTTP_200_OK)
 def complete_profile(
     payload: CompleteProfileRequest,
     current_user: AuthenticatedUser = Depends(get_current_user)
@@ -46,6 +47,7 @@ def complete_profile(
 
 
 @router.patch("/me/permitted-details", response_model=PermittedDetailsUpdateResponse, status_code=status.HTTP_200_OK)
+@router.patch("/me", response_model=PermittedDetailsUpdateResponse, status_code=status.HTTP_200_OK)
 def update_details(
     payload: PermittedDetailsUpdateRequest,
     current_user: AuthenticatedUser = Depends(get_current_user)

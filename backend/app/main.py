@@ -22,6 +22,8 @@ from app.routes.emergency import router as emergency_router
 from app.routes.audit import router as audit_router
 from app.routes.corrections import router as corrections_router
 from app.routes.uploads import router as uploads_router
+from app.routes.admin import router as admin_router
+from app.routes.hospital import router as hospital_router
 
 
 
@@ -76,6 +78,8 @@ app.include_router(emergency_router, prefix="/api/v1/emergency", tags=["Emergenc
 app.include_router(audit_router, prefix="/api/v1/audit", tags=["Audit Logging"])
 app.include_router(corrections_router, prefix="/api/v1/corrections", tags=["Clinical Corrections"])
 app.include_router(uploads_router, prefix="/api/v1", tags=["Documents & Uploads"])
+app.include_router(admin_router, prefix="/api/v1/admin", tags=["Administrator Portal"])
+app.include_router(hospital_router, prefix="/api/v1/hospital", tags=["Hospital Management"])
 
 
 

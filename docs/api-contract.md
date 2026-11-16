@@ -20,8 +20,9 @@
 8. [Doctor Consent & Access Control (`/consent`)](#8-doctor-consent--access-control-consent)
 9. [Emergency Break-Glass Protocol (`/emergency`)](#9-emergency-break-glass-protocol-emergency)
 10. [Audit Logging & Clinical Corrections (`/audit` & `/corrections`)](#10-audit-logging--clinical-corrections-audit--corrections)
-11. [Doctor Portal Access (`/doctor`)](#11-doctor-portal-access-doctor)
-12. [Standard Error Responses & Status Codes](#12-standard-error-responses--status-codes)
+11. [Administrator Portal & Verifications (`/admin`)](#11-administrator-portal--verifications-admin)
+12. [Doctor & Hospital Portal Access (`/doctor` & `/hospital`)](#12-doctor--hospital-portal-access-doctor--hospital)
+13. [Standard Error Responses & Status Codes](#13-standard-error-responses--status-codes)
 
 ---
 
@@ -90,7 +91,7 @@ All database and API identifiers use opaque, typed prefixes:
 ### 3.1 Register New Patient Account
 `POST /api/v1/auth/register`
 
-Initiates patient registration, sends an SMS verification OTP, and issues a 12-digit Mediclaim ID.
+Initiates patient registration and sends an SMS verification OTP. The 12-digit Mediclaim ID is generated internally but **not revealed** until administrator approval.
 
 #### Request Body
 ```json
@@ -110,7 +111,6 @@ Initiates patient registration, sends an SMS verification OTP, and issues a 12-d
   "message": "Account created. Verification OTP dispatched.",
   "data": {
     "userId": "usr_8f3a921b-640a-49c1-8d20-410a72ce1234",
-    "mediclaimId": "9481 2049 3817",
     "phone": "+919876543210",
     "accountStatus": "pending_otp",
     "otpSent": true,
@@ -128,7 +128,7 @@ Initiates patient registration, sends an SMS verification OTP, and issues a 12-d
 ### 3.2 Verify Phone / Registration OTP
 `POST /api/v1/auth/verify-otp`
 
-Validates the one-time password and activates the user account. Rate-limited to 5 incorrect attempts before temporary lockout.
+Validates the one-time password and marks the phone as verified. The account enters `pending_admin_approval` status. The Mediclaim ID is **not returned** and the user cannot sign in until an administrator verifies the account. Upon approval, the Mediclaim ID is dispatched via SMS/email. Rate-limited to 5 incorrect attempts before lockout.
 
 #### Request Body
 ```json
@@ -142,21 +142,14 @@ Validates the one-time password and activates the user account. Rate-limited to 
 ```json
 {
   "status": "success",
+  "message": "Phone number verified successfully. Account is pending admin verification.",
   "data": {
-    "accessToken": "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9...",
-    "tokenType": "Bearer",
-    "expiresIn": 900,
-    "user": {
-      "id": "usr_8f3a921b-640a-49c1-8d20-410a72ce1234",
-      "fullName": "Ananya Rao",
-      "email": null,
-      "phone": "+919876543210",
-      "role": "patient",
-      "mediclaimId": "9481 2049 3817",
-      "isActive": true,
-      "adminVerified": false,
-      "isProfileComplete": false
-    }
+    "userId": "usr_8f3a921b-640a-49c1-8d20-410a72ce1234",
+    "phone": "+919876543210",
+    "accountStatus": "pending_admin_approval",
+    "phoneVerified": true,
+    "adminVerified": false,
+    "message": "Phone number verified successfully. Your account is pending admin verification."
   },
   "meta": {
     "requestId": "req_01J0A1B2C4",
@@ -949,15 +942,271 @@ Patients request corrections to erroneous entries made by clinicians.
 
 ---
 
-## 11. Doctor Portal Access (`/doctor`)
+## 11. Administrator Portal & Verifications (`/admin`)
 
-When a doctor logs into their portal and accesses an authorized patient:
-- `GET /api/v1/doctor/patients/{mediclaim_id}`: Fetches authorized patient summary (if active grant exists).
-- `GET /api/v1/doctor/patients/{mediclaim_id}/records`: Fetches records filtered strictly by the granted scope. Attempts to access out-of-scope records return `403 SCOPE_UNAUTHORIZED`.
+Authorized hospital and government administrators use these endpoints to review patient onboarding, audit emergency accesses, and inspect high-level healthcare metrics.
+
+### 11.1 List Pending Patient Verifications
+`GET /api/v1/admin/verifications`
+
+Lists patient registrations awaiting identity verification. Supports query searching by full name, mobile number, or Aadhaar number.
+
+#### Response (`200 OK`)
+```json
+{
+  "status": "success",
+  "data": [
+    {
+      "userId": "usr_8f3a921b-640a-49c1-8d20-410a72ce1234",
+      "fullName": "Ananya Rao",
+      "dateOfBirth": "1994-05-12",
+      "phone": "+919876543210",
+      "aadhaarMasked": "XXXX-XXXX-8921",
+      "accountStatus": "pending_admin_approval",
+      "phoneVerified": true,
+      "adminVerified": false,
+      "registeredAt": "2026-11-16T22:30:00Z"
+    }
+  ],
+  "meta": {
+    "requestId": "req_01J0A1B2C8",
+    "serverTime": "2026-11-16T22:40:00Z",
+    "total": 1
+  }
+}
+```
+
+### 11.2 Get Verification Detail
+`GET /api/v1/admin/verifications/{user_id}`
+
+Retrieves complete submitted identity and emergency contact details for review.
+
+### 11.3 Approve Patient Verification
+`POST /api/v1/admin/verifications/{user_id}/approve`
+
+Approves the patient registration, sets `admin_verified = true`, dispatches the 12-digit Mediclaim ID via simulated SMS/email notification, and records an immutable audit log entry.
+
+#### Response (`200 OK`)
+```json
+{
+  "status": "success",
+  "message": "Patient verification approved. Mediclaim ID dispatched to user.",
+  "data": {
+    "userId": "usr_8f3a921b-640a-49c1-8d20-410a72ce1234",
+    "fullName": "Ananya Rao",
+    "phone": "+919876543210",
+    "mediclaimId": "9481 2049 3817",
+    "adminVerified": true,
+    "notificationSent": true
+  }
+}
+```
+
+### 11.4 Reject Patient Verification
+`POST /api/v1/admin/verifications/{user_id}/reject`
+
+Rejects a fraudulent or mismatched registration, deactivating the account and logging the reason.
+
+#### Request Body
+```json
+{
+  "reason": "Aadhaar demographic mismatch with official registry."
+}
+```
+
+### 11.5 Administrator System Statistics
+`GET /api/v1/admin/stats`
+
+Returns aggregated healthcare network metrics.
+
+#### Response (`200 OK`)
+```json
+{
+  "status": "success",
+  "data": {
+    "totalPatients": 1420,
+    "pendingVerifications": 18,
+    "approvedPatients": 1402,
+    "totalPractitioners": 84,
+    "totalHealthcareOrganizations": 6,
+    "emergencyBreakGlassEvents": 12,
+    "totalClinicalRecords": 9520
+  },
+  "meta": {
+    "requestId": "req_01J0A1B2C9",
+    "serverTime": "2026-11-16T22:42:00Z"
+  }
+}
+```
+
+### 11.6 Patient Directory & Global Emergency Audits
+- `GET /api/v1/admin/patients`: Paginated patient directory with search.
+- `GET /api/v1/admin/emergency-events`: System-wide log of emergency break-glass accesses for clinical governance.
 
 ---
 
-## 12. Standard Error Responses & Status Codes
+## 12. Doctor & Hospital Portal Access (`/doctor` & `/hospital`)
+
+The Doctor & Hospital Portal APIs enable licensed medical practitioners and hospital administrators to manage clinical records, submit and monitor access requests, record encounters, conditions, prescriptions, diagnostic reports, and immunizations under active patient consent, and manage healthcare organizations and practitioner affiliations.
+
+### Doctor Portal Endpoints (`/api/v1/doctor`)
+
+All endpoints in this group require authentication with the `doctor` or `practitioner` role (or `admin`).
+
+#### 1. List Authorized Patients
+- **Method / Path**: `GET /api/v1/doctor/patients`
+- **Description**: Returns all patients who currently have an active, non-expired access grant permitted to this practitioner.
+- **Success Status**: `200 OK`
+- **Response**:
+```json
+{
+  "status": "success",
+  "data": [
+    {
+      "patientProfileId": "pat_8c9aeeae-...",
+      "mediclaimId": "1234 5678 9012",
+      "fullName": "Rohan Das",
+      "gender": "male",
+      "dateOfBirth": "1991-07-14",
+      "bloodGroup": "O+",
+      "grantId": "grt_e5f6a1b2-...",
+      "approvedScopes": ["condition", "medication"],
+      "expiresAt": "2026-11-17T08:00:00Z"
+    }
+  ],
+  "meta": { "requestId": "req_01J0A1B2C8", "serverTime": "2026-11-17T00:30:00Z", "total": 1 }
+}
+```
+
+#### 2. Get Authorized Patient Summary
+- **Method / Path**: `GET /api/v1/doctor/patients/{mediclaim_id}`
+- **Description**: Retrieves demographic summary for an authorized patient. Requires active consent grant.
+- **Success Status**: `200 OK`
+
+#### 3. Get Patient Clinical Records (Scoped)
+- **Method / Path**: `GET /api/v1/doctor/patients/{mediclaim_id}/records?kind={kind}`
+- **Description**: Retrieves clinical records filtered strictly by the patient's approved scopes. Querying an unapproved scope returns `403 SCOPE_UNAUTHORIZED`.
+- **Success Status**: `200 OK`
+
+#### 4. Submit Access Request
+- **Method / Path**: `POST /api/v1/doctor/requests`
+- **Description**: Submits an access request to a patient by 12-digit Mediclaim ID.
+- **Success Status**: `202 Accepted`
+- **Request Body**:
+```json
+{
+  "patientMediclaimId": "1234 5678 9012",
+  "scope": ["condition", "medication"],
+  "durationHours": 8,
+  "purpose": "Cardiology consultation and prescription review."
+}
+```
+
+#### 5. List Doctor's Access Requests
+- **Method / Path**: `GET /api/v1/doctor/requests?status={all|pending|active|revoked}`
+- **Description**: Queries access requests initiated by this doctor.
+- **Success Status**: `200 OK`
+
+#### 6. Record Clinical Encounter
+- **Method / Path**: `POST /api/v1/doctor/patients/{mediclaim_id}/encounters`
+- **Description**: Records consultation note/encounter with patient.
+- **Success Status**: `201 Created`
+- **Request Body**:
+```json
+{
+  "encounterType": "outpatient",
+  "reason": "Routine hypertensive follow-up consultation",
+  "diagnosisSummary": "Controlled Essential Hypertension",
+  "startTime": "2026-11-17T10:00:00Z",
+  "endTime": "2026-11-17T10:30:00Z",
+  "status": "completed"
+}
+```
+
+#### 7. Diagnose Condition (Scoped)
+- **Method / Path**: `POST /api/v1/doctor/patients/{mediclaim_id}/conditions`
+- **Description**: Records a diagnosed medical condition. Requires `'condition'` in approved scope.
+- **Success Status**: `201 Created`
+
+#### 8. Issue Prescription (Scoped)
+- **Method / Path**: `POST /api/v1/doctor/patients/{mediclaim_id}/prescriptions`
+- **Description**: Issues official prescription with items, dosages, and schedules. Requires `'medication'` in approved scope.
+- **Success Status**: `201 Created`
+
+#### 9. Order Diagnostic Report (Scoped)
+- **Method / Path**: `POST /api/v1/doctor/patients/{mediclaim_id}/reports`
+- **Description**: Records diagnostic test report. Requires `'report'` in approved scope.
+- **Success Status**: `201 Created`
+
+#### 10. Record Vaccination (Scoped)
+- **Method / Path**: `POST /api/v1/doctor/patients/{mediclaim_id}/vaccinations`
+- **Description**: Records administered immunization. Requires `'vaccination'` in approved scope.
+- **Success Status**: `201 Created`
+
+---
+
+### Hospital & Organization Management Endpoints (`/api/v1/hospital`)
+
+Endpoints for managing medical facilities, clinics, and affiliated medical personnel.
+
+#### 1. List Healthcare Organizations
+- **Method / Path**: `GET /api/v1/hospital/organizations?q={name}&page=1&limit=20`
+- **Description**: Paginated list of registered healthcare organizations with affiliated doctor counts.
+- **Success Status**: `200 OK`
+
+#### 2. Register Healthcare Organization
+- **Method / Path**: `POST /api/v1/hospital/organizations`
+- **Description**: Registers a hospital, clinic, pharmacy, or diagnostic lab. Requires `admin` or `hospital_admin`.
+- **Success Status**: `201 Created`
+- **Request Body**:
+```json
+{
+  "name": "Apex Super Specialty Hospital",
+  "organizationType": "hospital",
+  "registrationNumber": "HOSP-REG-489201",
+  "address": "Sector 62, Noida, Uttar Pradesh",
+  "phone": "+911204000100",
+  "email": "contact@apexhospital.in"
+}
+```
+
+#### 3. Get Organization Profile
+- **Method / Path**: `GET /api/v1/hospital/organizations/{org_id}`
+- **Description**: Organization details and list of affiliated practitioners.
+- **Success Status**: `200 OK`
+
+#### 4. List Practitioners
+- **Method / Path**: `GET /api/v1/hospital/practitioners?organizationId={id}&specialization={spec}&q={query}`
+- **Description**: Paginated list of registered doctors with specialty and hospital affiliation.
+- **Success Status**: `200 OK`
+
+#### 5. Onboard Practitioner
+- **Method / Path**: `POST /api/v1/hospital/practitioners`
+- **Description**: Registers a new practitioner with medical council registration number and creates their doctor account. Requires `admin` or `hospital_admin`.
+- **Success Status**: `201 Created`
+- **Request Body**:
+```json
+{
+  "fullName": "Dr. Maya Sen",
+  "phone": "+919500011122",
+  "email": "maya@apexhospital.in",
+  "password": "SecurePassword123!",
+  "registrationNumber": "MCI-789456",
+  "specialization": "Neurology",
+  "qualification": "MBBS, DM Neurology",
+  "organizationId": "org_...",
+  "designation": "Senior Neurologist"
+}
+```
+
+#### 6. Get Practitioner Profile
+- **Method / Path**: `GET /api/v1/hospital/practitioners/{practitioner_id}`
+- **Description**: Retrieves full credentials, registration number, and hospital memberships.
+- **Success Status**: `200 OK`
+
+---
+
+## 13. Standard Error Responses & Status Codes
 
 All error responses adhere to **RFC 9457 / RFC 7807** Problem Details served as `application/problem+json`:
 
