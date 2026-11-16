@@ -13,6 +13,8 @@ from app.exceptions import (
     unhandled_exception_handler,
 )
 from app.routes.auth import router as auth_router
+from app.routes.patients import router as patients_router
+
 
 app = FastAPI(
     title="Mediclaim Healthcare API",
@@ -53,6 +55,8 @@ def shutdown():
 
 # Include routers
 app.include_router(auth_router, prefix="/api/v1/auth", tags=["Authentication"])
+app.include_router(patients_router, prefix="/api/v1/patients", tags=["Patients"])
+
 
 @app.get("/health", tags=["Health"])
 def health():

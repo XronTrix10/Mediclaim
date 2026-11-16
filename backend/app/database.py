@@ -149,11 +149,15 @@ def init_db() -> None:
                 date_of_birth date NOT NULL,
                 blood_group varchar(5),
                 gender varchar(30),
+                address text,
                 emergency_contact_name varchar(200),
                 emergency_contact_phone varchar(20),
+                emergency_contact_relation varchar(50),
                 created_at timestamp NOT NULL DEFAULT now(),
                 updated_at timestamp NOT NULL DEFAULT now()
             );
         """)
+        conn.execute("ALTER TABLE patient_profiles ADD COLUMN IF NOT EXISTS address text;")
+        conn.execute("ALTER TABLE patient_profiles ADD COLUMN IF NOT EXISTS emergency_contact_relation varchar(50);")
 
     logger.info("PostgreSQL database initialized and verified.")
