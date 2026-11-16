@@ -45,7 +45,13 @@ class TestAuthAndSecurity(unittest.TestCase):
         res = register(reg_payload)
         self.assertEqual(res["status"], "success")
         user_id = res["data"]["userId"]
-        mediclaim_id = res["data"]["mediclaimId"]
+        # Ensure Mediclaim ID is NOT revealed on register
+        self.assertNotIn("mediclaimId", res["data"])
+
+        # Fetch internally allocated ID from DB (simulating notification received after approval)
+        with get_db() as conn:
+            user_row = conn.execute("SELECT mediclaim_id FROM users WHERE phone = %s", (phone,)).fetchone()
+            mediclaim_id = user_row["mediclaim_id"]
         self.assertEqual(len(mediclaim_id.replace(" ", "")), 12)
 
         # 2. Duplicate registration test
@@ -65,15 +71,25 @@ class TestAuthAndSecurity(unittest.TestCase):
         with get_db() as conn:
             conn.execute("UPDATE users SET otp_hash = %s, otp_expires_at = 9999999999 WHERE phone = %s", (hash_otp(test_otp), phone))
 
-        # Successful verification
+        # Successful verification: account pending admin approval, Mediclaim ID not revealed
         verify_res = verify_otp(VerifyOTPRequest(userId=user_id, otp=test_otp))
         self.assertEqual(verify_res["status"], "success")
         verify_data = verify_res["data"]
-        token = verify_data["accessToken"]
-        self.assertTrue(token)
-        self.assertEqual(verify_data["user"]["phone"], phone)
+        self.assertNotIn("mediclaimId", verify_data)
+        self.assertFalse(verify_data["adminVerified"])
+        self.assertEqual(verify_data["accountStatus"], "pending_admin_approval")
 
-        # 4. Login with password
+        # Attempt login before admin approval -> must fail with 403
+        with self.assertRaises(APIProblemException) as ctx:
+            login(LoginRequest(mediclaimId=mediclaim_id, password=password))
+        self.assertEqual(ctx.exception.status_code, 403)
+        self.assertEqual(ctx.exception.code, "ACCOUNT_PENDING_APPROVAL")
+
+        # Simulate Admin verification of user details
+        with get_db() as conn:
+            conn.execute("UPDATE users SET admin_verified = true WHERE phone = %s", (phone,))
+
+        # 4. Login with password (after admin verification)
         login_res = login(LoginRequest(mediclaimId=mediclaim_id, password=password))
         self.assertEqual(login_res["status"], "success")
         login_data = login_res["data"]

@@ -15,12 +15,20 @@ export interface UserSummary {
 
 export interface RegisterResult {
   userId: string
-  mediclaimId: string
   phone: string
   accountStatus: string
   otpSent: boolean
   otpExpiresInSeconds: number
   debugOtp?: string | null
+}
+
+export interface VerifyOtpResult {
+  userId: string
+  phone: string
+  accountStatus: string
+  phoneVerified: boolean
+  adminVerified: boolean
+  message: string
 }
 
 export interface AuthSession {
@@ -48,13 +56,11 @@ export const authApi = {
     return res.data
   },
 
-  async verifyOtp(userId: string, otp: string): Promise<AuthSession> {
-    const res = await api.post<{ status: string; data: AuthSession }>('/auth/verify-otp', {
+  async verifyOtp(userId: string, otp: string): Promise<VerifyOtpResult> {
+    const res = await api.post<{ status: string; data: VerifyOtpResult }>('/auth/verify-otp', {
       userId,
       otp,
     })
-    setStoredToken(res.data.accessToken)
-    setStoredUser(res.data.user)
     return res.data
   },
 

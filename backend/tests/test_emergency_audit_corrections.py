@@ -39,7 +39,9 @@ class TestEmergencyAuditCorrections(unittest.TestCase):
             password=self.password
         ))
         self.patient_user_id = pat_reg["data"]["userId"]
-        self.patient_med_id = pat_reg["data"]["mediclaimId"]
+        with get_db() as conn:
+            row = conn.execute("SELECT mediclaim_id FROM users WHERE phone = %s", (self.patient_phone,)).fetchone()
+            self.patient_med_id = row["mediclaim_id"]
 
         otp = "334455"
         with get_db() as conn:
@@ -76,7 +78,9 @@ class TestEmergencyAuditCorrections(unittest.TestCase):
             password=self.password
         ))
         self.doctor_user_id = doc_reg["data"]["userId"]
-        self.doctor_med_id = doc_reg["data"]["mediclaimId"]
+        with get_db() as conn:
+            row = conn.execute("SELECT mediclaim_id FROM users WHERE phone = %s", (self.doctor_phone,)).fetchone()
+            self.doctor_med_id = row["mediclaim_id"]
 
         with get_db() as conn:
             conn.execute("UPDATE users SET otp_hash = %s, otp_expires_at = 9999999999 WHERE phone = %s", (hash_otp(otp), self.doctor_phone))

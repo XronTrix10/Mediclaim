@@ -2,7 +2,7 @@ from datetime import datetime, timezone
 import uuid
 from fastapi import APIRouter, Depends, status
 from app.schemas.auth import (
-    RegisterRequest, RegisterResponse, VerifyOTPRequest, AuthResponse,
+    RegisterRequest, RegisterResponse, VerifyOTPRequest, VerifyOTPResponse, AuthResponse,
     LoginRequest, RequestOTPRequest, RequestOTPResponse, ResendOTPRequest,
     ResendOTPResponse, MessageResponse
 )
@@ -34,11 +34,12 @@ def register(payload: RegisterRequest):
     }
 
 
-@router.post("/verify-otp", response_model=AuthResponse, status_code=status.HTTP_200_OK)
+@router.post("/verify-otp", response_model=VerifyOTPResponse, status_code=status.HTTP_200_OK)
 def verify_otp(payload: VerifyOTPRequest):
     data = verify_user_otp(payload)
     return {
         "status": "success",
+        "message": data.get("message", "Phone verified successfully. Awaiting administrator review."),
         "data": data,
         "meta": _make_meta(),
     }

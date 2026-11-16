@@ -31,7 +31,11 @@ export function LoginForm({ onSwitch, onSuccess }: FormProps) {
       await authApi.login({ mediclaimId: mediclaimId.trim(), password })
       onSuccess()
     } catch (err: any) {
-      setError(err instanceof ApiError ? err.message : 'Sign in failed. Check your credentials.')
+      if (err instanceof ApiError && err.code === 'ACCOUNT_PENDING_APPROVAL') {
+        setError('Your account is awaiting administrator verification. Once approved, your Mediclaim ID will be sent via SMS/email so you can sign in.')
+      } else {
+        setError(err instanceof ApiError ? err.message : 'Sign in failed. Check your credentials.')
+      }
     } finally {
       setLoading(false)
     }
@@ -66,7 +70,11 @@ export function LoginForm({ onSwitch, onSuccess }: FormProps) {
       await authApi.login({ mediclaimId: mediclaimId.trim(), otp: otp.trim() })
       onSuccess()
     } catch (err: any) {
-      setError(err instanceof ApiError ? err.message : 'Invalid verification code.')
+      if (err instanceof ApiError && err.code === 'ACCOUNT_PENDING_APPROVAL') {
+        setError('Your account is awaiting administrator verification. Once approved, your Mediclaim ID will be sent via SMS/email so you can sign in.')
+      } else {
+        setError(err instanceof ApiError ? err.message : 'Invalid verification code.')
+      }
     } finally {
       setLoading(false)
     }
@@ -226,7 +234,7 @@ export function LoginForm({ onSwitch, onSuccess }: FormProps) {
   )
 }
 
-export function RegisterForm({ onSwitch, onSuccess }: FormProps) {
+export function RegisterForm({ onSwitch }: FormProps) {
   const [fullName, setFullName] = useState('')
   const [dateOfBirth, setDateOfBirth] = useState('')
   const [phone, setPhone] = useState('')
@@ -236,7 +244,7 @@ export function RegisterForm({ onSwitch, onSuccess }: FormProps) {
 
   // OTP Verification state
   const [pendingUserId, setPendingUserId] = useState<string | null>(null)
-  const [assignedMediclaimId, setAssignedMediclaimId] = useState<string | null>(null)
+  const [isAwaitingApproval, setIsAwaitingApproval] = useState(false)
   const [otp, setOtp] = useState('')
   const [debugOtp, setDebugOtp] = useState<string | null>(null)
   const [loading, setLoading] = useState(false)
@@ -262,7 +270,6 @@ export function RegisterForm({ onSwitch, onSuccess }: FormProps) {
         password,
       })
       setPendingUserId(res.userId)
-      setAssignedMediclaimId(res.mediclaimId)
       if (res.debugOtp) {
         setDebugOtp(res.debugOtp)
       }
@@ -280,7 +287,7 @@ export function RegisterForm({ onSwitch, onSuccess }: FormProps) {
     setLoading(true)
     try {
       await authApi.verifyOtp(pendingUserId, otp.trim())
-      onSuccess()
+      setIsAwaitingApproval(true)
     } catch (err: any) {
       setError(err instanceof ApiError ? err.message : 'Invalid verification code.')
     } finally {
@@ -301,11 +308,57 @@ export function RegisterForm({ onSwitch, onSuccess }: FormProps) {
     }
   }
 
+  if (isAwaitingApproval) {
+    return (
+      <AuthShell
+        title="Account Submitted"
+        subtitle="Your mobile number has been verified successfully."
+        footer={
+          <>
+            Already have your ID?{' '}
+            <button
+              type="button"
+              onClick={onSwitch}
+              className="cursor-pointer font-semibold text-brand hover:underline hover:underline-offset-4"
+            >
+              Sign in
+            </button>
+          </>
+        }
+      >
+        <div className="mt-6 grid gap-5">
+          <div className="rounded-[20px] border border-line bg-mist/60 p-5 text-center">
+            <div className="mx-auto flex size-12 items-center justify-center rounded-full bg-brand-tint text-brand">
+              <svg className="size-6" fill="none" viewBox="0 0 24 24" strokeWidth="2" stroke="currentColor">
+                <path strokeLinecap="round" strokeLinejoin="round" d="M9 12.75 11.25 15 15 9.75M21 12c0 1.268-.63 2.39-1.593 3.068a3.745 3.745 0 0 1-1.043 3.296 3.745 3.745 0 0 1-3.296 1.043A3.745 3.745 0 0 1 12 21c-1.268 0-2.39-.63-3.068-1.593a3.746 3.746 0 0 1-3.296-1.043 3.745 3.745 0 0 1-1.043-3.296A3.745 3.745 0 0 1 3 12c0-1.268.63-2.39 1.593-3.068a3.745 3.745 0 0 1 1.043-3.296 3.746 3.746 0 0 1 3.296-1.043A3.746 3.746 0 0 1 12 3c1.268 0 2.39.63 3.068 1.593a3.746 3.746 0 0 1 3.296 1.043 3.746 3.746 0 0 1 1.043 3.296A3.745 3.745 0 0 1 21 12Z" />
+              </svg>
+            </div>
+            <h3 className="mt-3 text-base font-semibold text-ink">Awaiting Admin Verification</h3>
+            <p className="mt-2 text-sm leading-relaxed text-ink-soft">
+              Please wait until an administrator verifies your account with all your details.
+            </p>
+            <p className="mt-2 text-sm leading-relaxed text-ink-soft">
+              Once approved, you will receive your <strong className="font-semibold text-ink">Mediclaim ID</strong> via email or SMS. You can then use your Mediclaim ID to sign in.
+            </p>
+          </div>
+
+          <button
+            type="button"
+            onClick={onSwitch}
+            className={`${button('primary', 'lg')} w-full`}
+          >
+            Back to Sign in
+          </button>
+        </div>
+      </AuthShell>
+    )
+  }
+
   if (pendingUserId) {
     return (
       <AuthShell
         title="Verify your number"
-        subtitle={`We sent a 6-digit code to ${phone}. Enter it below to activate your account.`}
+        subtitle={`We sent a 6-digit code to ${phone}. Enter it below to verify your account.`}
         footer={
           <>
             Entered the wrong phone?{' '}
@@ -325,13 +378,6 @@ export function RegisterForm({ onSwitch, onSuccess }: FormProps) {
         {error && (
           <div role="alert" className="mt-4 rounded-xl bg-allergy-tint p-3 text-sm font-medium text-allergy-ink">
             {error}
-          </div>
-        )}
-
-        {assignedMediclaimId && (
-          <div className="mt-4 rounded-xl border border-line bg-mist/60 p-3.5 text-center">
-            <span className="block text-xs text-ink-faint">Your Mediclaim ID</span>
-            <span className="font-mono text-base font-bold text-ink tracking-wide">{assignedMediclaimId}</span>
           </div>
         )}
 
@@ -356,7 +402,7 @@ export function RegisterForm({ onSwitch, onSuccess }: FormProps) {
             />
           </Field>
           <button className={`${button('primary', 'lg')} w-full`} type="submit" disabled={loading}>
-            {loading ? 'Activating account...' : 'Activate account & Sign in'}
+            {loading ? 'Verifying code...' : 'Verify mobile number'}
           </button>
           <button
             type="button"

@@ -90,7 +90,7 @@ All database and API identifiers use opaque, typed prefixes:
 ### 3.1 Register New Patient Account
 `POST /api/v1/auth/register`
 
-Initiates patient registration, sends an SMS verification OTP, and issues a 12-digit Mediclaim ID.
+Initiates patient registration and sends an SMS verification OTP. The 12-digit Mediclaim ID is generated internally but **not revealed** until administrator approval.
 
 #### Request Body
 ```json
@@ -110,7 +110,6 @@ Initiates patient registration, sends an SMS verification OTP, and issues a 12-d
   "message": "Account created. Verification OTP dispatched.",
   "data": {
     "userId": "usr_8f3a921b-640a-49c1-8d20-410a72ce1234",
-    "mediclaimId": "9481 2049 3817",
     "phone": "+919876543210",
     "accountStatus": "pending_otp",
     "otpSent": true,
@@ -128,7 +127,7 @@ Initiates patient registration, sends an SMS verification OTP, and issues a 12-d
 ### 3.2 Verify Phone / Registration OTP
 `POST /api/v1/auth/verify-otp`
 
-Validates the one-time password and activates the user account. Rate-limited to 5 incorrect attempts before temporary lockout.
+Validates the one-time password and marks the phone as verified. The account enters `pending_admin_approval` status. The Mediclaim ID is **not returned** and the user cannot sign in until an administrator verifies the account. Upon approval, the Mediclaim ID is dispatched via SMS/email. Rate-limited to 5 incorrect attempts before lockout.
 
 #### Request Body
 ```json
@@ -142,21 +141,14 @@ Validates the one-time password and activates the user account. Rate-limited to 
 ```json
 {
   "status": "success",
+  "message": "Phone number verified successfully. Account is pending admin verification.",
   "data": {
-    "accessToken": "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9...",
-    "tokenType": "Bearer",
-    "expiresIn": 900,
-    "user": {
-      "id": "usr_8f3a921b-640a-49c1-8d20-410a72ce1234",
-      "fullName": "Ananya Rao",
-      "email": null,
-      "phone": "+919876543210",
-      "role": "patient",
-      "mediclaimId": "9481 2049 3817",
-      "isActive": true,
-      "adminVerified": false,
-      "isProfileComplete": false
-    }
+    "userId": "usr_8f3a921b-640a-49c1-8d20-410a72ce1234",
+    "phone": "+919876543210",
+    "accountStatus": "pending_admin_approval",
+    "phoneVerified": true,
+    "adminVerified": false,
+    "message": "Phone number verified successfully. Your account is pending admin verification."
   },
   "meta": {
     "requestId": "req_01J0A1B2C4",

@@ -35,7 +35,9 @@ class TestRecordsService(unittest.TestCase):
             password=self.password
         ))
         self.user_id = reg_res["data"]["userId"]
-        self.mediclaim_id = reg_res["data"]["mediclaimId"]
+        with get_db() as conn:
+            row = conn.execute("SELECT mediclaim_id FROM users WHERE phone = %s", (self.phone,)).fetchone()
+            self.mediclaim_id = row["mediclaim_id"]
 
         otp = "654321"
         with get_db() as conn:

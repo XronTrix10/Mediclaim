@@ -12,7 +12,6 @@ class RegisterRequest(BaseModel):
 
 class RegisterData(BaseModel):
     userId: str
-    mediclaimId: str
     phone: str
     accountStatus: str = "pending_otp"
     otpSent: bool
@@ -35,6 +34,20 @@ class VerifyOTPRequest(BaseModel):
     model_config = ConfigDict(extra="forbid")
     userId: str
     otp: str = Field(pattern=r"^\d{6}$")
+
+class VerifyOTPData(BaseModel):
+    userId: str
+    phone: str
+    accountStatus: str = "pending_admin_approval"
+    phoneVerified: bool = True
+    adminVerified: bool = False
+    message: str = "Phone verified successfully. Awaiting administrator review."
+
+class VerifyOTPResponse(BaseModel):
+    status: str = "success"
+    message: str
+    data: VerifyOTPData
+    meta: Optional[EnvelopeMeta] = None
 
 class UserSummary(BaseModel):
     id: str
