@@ -177,5 +177,27 @@ def init_db() -> None:
         # Make practitioner_id nullable on prescriptions for uploaded/self-reported prescriptions
         conn.execute("ALTER TABLE prescriptions ALTER COLUMN practitioner_id DROP NOT NULL;")
 
+        # Access grants metadata extensions
+        conn.execute("ALTER TABLE patient_access_grants ADD COLUMN IF NOT EXISTS grantee_name varchar(255);")
+        conn.execute("ALTER TABLE patient_access_grants ADD COLUMN IF NOT EXISTS grantee_role varchar(255);")
+        conn.execute("ALTER TABLE patient_access_grants ADD COLUMN IF NOT EXISTS duration_hours integer;")
+        # Allow grantee_user_id to be nullable if direct grant by name/role
+        conn.execute("ALTER TABLE patient_access_grants ALTER COLUMN valid_from DROP NOT NULL;")
+
+        # Caregivers table
+        conn.execute("""
+            CREATE TABLE IF NOT EXISTS patient_caregivers (
+                id uuid PRIMARY KEY DEFAULT gen_random_uuid(),
+                patient_id uuid NOT NULL REFERENCES patient_profiles(id) ON DELETE CASCADE,
+                name varchar(200) NOT NULL,
+                relation varchar(100) NOT NULL,
+                scope text[] NOT NULL,
+                since date NOT NULL DEFAULT CURRENT_DATE,
+                created_at timestamp NOT NULL DEFAULT now(),
+                deleted_at timestamp
+            );
+        """)
+
+
 
     logger.info("PostgreSQL database initialized and verified.")
