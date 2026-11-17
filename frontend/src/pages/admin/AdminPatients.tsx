@@ -123,7 +123,7 @@ export default function AdminPatients() {
                   </span>
                   <span className="hidden text-[0.9rem] text-ink-soft sm:block">{p.phone}</span>
                   <span className="hidden text-[0.88rem] text-ink-soft sm:block">
-                    {formatDate(p.registeredAt)}
+                    {formatDate(p.registeredAt || (p as any).createdAt)}
                   </span>
                   <span>
                     {p.adminVerified ? (

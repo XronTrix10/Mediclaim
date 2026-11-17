@@ -20,10 +20,14 @@ export interface VerificationDetail extends PendingVerification {
 export interface AdminStats {
   totalPatients: number
   pendingApprovals: number
+  pendingVerifications?: number
   approvedPatients: number
   totalPractitioners: number
   totalOrganizations: number
+  totalHealthcareOrganizations?: number
   totalEmergencyEvents: number
+  emergencyBreakGlassEvents?: number
+  totalClinicalRecords?: number
 }
 
 export interface GlobalEmergencyEvent {
@@ -83,8 +87,20 @@ export async function rejectPatientVerification(userId: string, reason: string):
 }
 
 export async function getAdminStats(): Promise<AdminStats> {
-  const res = await request<{ status: string; data: AdminStats }>('/admin/stats')
-  return res.data
+  const res = await request<{ status: string; data: any }>('/admin/stats')
+  const d = res.data || {}
+  return {
+    totalPatients: d.totalPatients ?? 0,
+    pendingApprovals: d.pendingApprovals ?? d.pendingVerifications ?? 0,
+    pendingVerifications: d.pendingVerifications ?? d.pendingApprovals ?? 0,
+    approvedPatients: d.approvedPatients ?? 0,
+    totalPractitioners: d.totalPractitioners ?? 0,
+    totalOrganizations: d.totalOrganizations ?? d.totalHealthcareOrganizations ?? 0,
+    totalHealthcareOrganizations: d.totalHealthcareOrganizations ?? d.totalOrganizations ?? 0,
+    totalEmergencyEvents: d.totalEmergencyEvents ?? d.emergencyBreakGlassEvents ?? 0,
+    emergencyBreakGlassEvents: d.emergencyBreakGlassEvents ?? d.totalEmergencyEvents ?? 0,
+    totalClinicalRecords: d.totalClinicalRecords ?? 0,
+  }
 }
 
 export async function getAllPatients(params?: {

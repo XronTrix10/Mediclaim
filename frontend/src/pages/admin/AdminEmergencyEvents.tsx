@@ -61,46 +61,51 @@ export default function AdminEmergencyEvents() {
           </div>
         ) : (
           <div className="divide-y divide-line">
-            {events.map((ev) => (
-              <div key={ev.id} className="flex gap-4 py-4">
-                <span className="mt-0.5 grid size-9 shrink-0 place-items-center rounded-[11px] bg-[#fff3e0] text-[#e65100]">
-                  <Icon name="alert" size={18} />
-                </span>
-                <div className="min-w-0 flex-1">
-                  <div className="flex flex-wrap items-center gap-x-2 gap-y-0.5">
-                    <strong className="text-[0.95rem] font-semibold text-ink">{ev.doctorName}</strong>
-                    <span className="text-[0.82rem] text-ink-faint">accessed records of</span>
-                    <strong className="text-[0.95rem] font-semibold text-ink">{ev.patientName}</strong>
-                  </div>
-                  <div className="mt-1 flex flex-wrap gap-x-4 gap-y-0.5 text-[0.82rem] text-ink-soft">
-                    <span className="flex items-center gap-1">
-                      <Icon name="shield" size={13} />
-                      Mediclaim ID: <span className="font-mono font-medium">{ev.mediclaimId}</span>
-                    </span>
-                    {ev.hospitalName && (
+            {events.map((ev: any) => {
+              const medId = ev.mediclaimId || ev.patientMediclaimId || '—'
+              const when = ev.occurredAt || ev.accessedAt
+              const reason = ev.reason || ev.justification || 'Emergency medical care'
+              return (
+                <div key={ev.id} className="flex gap-4 py-4">
+                  <span className="mt-0.5 grid size-9 shrink-0 place-items-center rounded-[11px] bg-[#fff3e0] text-[#e65100]">
+                    <Icon name="alert" size={18} />
+                  </span>
+                  <div className="min-w-0 flex-1">
+                    <div className="flex flex-wrap items-center gap-x-2 gap-y-0.5">
+                      <strong className="text-[0.95rem] font-semibold text-ink">{ev.doctorName}</strong>
+                      <span className="text-[0.82rem] text-ink-faint">accessed records of</span>
+                      <strong className="text-[0.95rem] font-semibold text-ink">{ev.patientName}</strong>
+                    </div>
+                    <div className="mt-1 flex flex-wrap gap-x-4 gap-y-0.5 text-[0.82rem] text-ink-soft">
                       <span className="flex items-center gap-1">
-                        <Icon name="stethoscope" size={13} />
-                        {ev.hospitalName}
+                        <Icon name="shield" size={13} />
+                        Mediclaim ID: <span className="font-mono font-medium">{medId}</span>
                       </span>
-                    )}
-                    {ev.doctorPhone && (
-                      <span className="flex items-center gap-1">
-                        <Icon name="phone" size={13} />
-                        {ev.doctorPhone}
-                      </span>
-                    )}
+                      {ev.hospitalName && (
+                        <span className="flex items-center gap-1">
+                          <Icon name="stethoscope" size={13} />
+                          {ev.hospitalName}
+                        </span>
+                      )}
+                      {ev.doctorPhone && (
+                        <span className="flex items-center gap-1">
+                          <Icon name="phone" size={13} />
+                          {ev.doctorPhone}
+                        </span>
+                      )}
+                    </div>
+                    <div className="mt-2 rounded-[10px] bg-mist px-3 py-2 text-[0.84rem] text-ink-soft">
+                      <span className="font-semibold text-ink">Reason: </span>
+                      {reason}
+                    </div>
                   </div>
-                  <div className="mt-2 rounded-[10px] bg-mist px-3 py-2 text-[0.84rem] text-ink-soft">
-                    <span className="font-semibold text-ink">Reason: </span>
-                    {ev.reason}
+                  <div className="shrink-0 text-right text-[0.78rem] text-ink-faint">
+                    <span className="hidden sm:block">{formatDate(when)}</span>
+                    <span className="block">{formatWhen(when)}</span>
                   </div>
                 </div>
-                <div className="shrink-0 text-right text-[0.78rem] text-ink-faint">
-                  <span className="hidden sm:block">{formatDate(ev.occurredAt)}</span>
-                  <span className="block">{formatWhen(ev.occurredAt)}</span>
-                </div>
-              </div>
-            ))}
+              )
+            })}
           </div>
         )}
       </div>

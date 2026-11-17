@@ -3,11 +3,11 @@ import uuid
 from fastapi import APIRouter, Depends, status
 from app.schemas.auth import (
     RegisterRequest, RegisterResponse, VerifyOTPRequest, VerifyOTPResponse, AuthResponse,
-    LoginRequest, RequestOTPRequest, RequestOTPResponse, ResendOTPRequest,
+    LoginRequest, AdminLoginRequest, RequestOTPRequest, RequestOTPResponse, ResendOTPRequest,
     ResendOTPResponse, MessageResponse
 )
 from app.services.auth_service import (
-    register_user, verify_user_otp, login_user, request_login_otp, resend_otp
+    register_user, verify_user_otp, login_user, login_admin, request_login_otp, resend_otp
 )
 from app.security import get_current_user, AuthenticatedUser, create_access_token
 
@@ -51,6 +51,40 @@ def login(payload: LoginRequest):
     return {
         "status": "success",
         "data": data,
+        "meta": _make_meta(),
+    }
+
+
+@router.post("/admin/login", response_model=AuthResponse, status_code=status.HTTP_200_OK)
+def admin_login(payload: AdminLoginRequest):
+    data = login_admin(payload)
+    return {
+        "status": "success",
+        "data": data,
+        "meta": _make_meta(),
+    }
+
+
+@router.get("/me", response_model=AuthResponse, status_code=status.HTTP_200_OK)
+def get_current_user_profile(current_user: AuthenticatedUser = Depends(get_current_user)):
+    return {
+        "status": "success",
+        "data": {
+            "accessToken": "",
+            "tokenType": "Bearer",
+            "expiresIn": 86400,
+            "user": {
+                "id": current_user.id,
+                "fullName": current_user.full_name,
+                "email": current_user.email,
+                "phone": current_user.phone,
+                "role": current_user.token_role or (current_user.roles[0] if current_user.roles else "patient"),
+                "mediclaimId": current_user.mediclaim_id,
+                "isActive": current_user.is_active,
+                "adminVerified": current_user.admin_verified,
+                "isProfileComplete": current_user.profile_complete,
+            },
+        },
         "meta": _make_meta(),
     }
 

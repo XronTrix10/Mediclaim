@@ -62,6 +62,8 @@ app.add_exception_handler(Exception, unhandled_exception_handler)
 @app.on_event("startup")
 def startup():
     init_db()
+    from app.services.auth_service import seed_admin_user
+    seed_admin_user()
 
 @app.on_event("shutdown")
 def shutdown():

@@ -2,9 +2,9 @@ import secrets
 import unittest
 from datetime import date
 from app.schemas.auth import (
-    RegisterRequest, VerifyOTPRequest, LoginRequest, RequestOTPRequest, ResendOTPRequest
+    RegisterRequest, VerifyOTPRequest, LoginRequest, AdminLoginRequest, RequestOTPRequest, ResendOTPRequest
 )
-from app.routes.auth import register, verify_otp, login, request_otp, resend_user_otp, refresh_token
+from app.routes.auth import register, verify_otp, login, admin_login, request_otp, resend_user_otp, refresh_token
 from app.security import (
     verhoeff_validate, generate_mediclaim_id, format_mediclaim_id,
     hash_otp, get_current_user, AuthenticatedUser
@@ -129,6 +129,24 @@ class TestAuthAndSecurity(unittest.TestCase):
         # 8. Clean up
         with get_db() as conn:
             conn.execute("DELETE FROM users WHERE phone = %s", (phone,))
+
+    def test_admin_login(self):
+        from app.config import ADMIN_EMAIL, ADMIN_PASSWORD
+
+        # 1. Test successful admin login with configured credentials
+        res = admin_login(AdminLoginRequest(username=ADMIN_EMAIL, password=ADMIN_PASSWORD))
+        self.assertEqual(res["status"], "success")
+        self.assertEqual(res["data"]["user"]["role"], "admin")
+        self.assertTrue(res["data"]["accessToken"])
+
+        # 2. Test login with "admin" alias as username
+        res2 = admin_login(AdminLoginRequest(username="admin", password=ADMIN_PASSWORD))
+        self.assertEqual(res2["status"], "success")
+
+        # 3. Test invalid password
+        with self.assertRaises(APIProblemException) as ctx:
+            admin_login(AdminLoginRequest(username=ADMIN_EMAIL, password="WrongPassword!"))
+        self.assertEqual(ctx.exception.status_code, 401)
 
 if __name__ == "__main__":
     unittest.main()

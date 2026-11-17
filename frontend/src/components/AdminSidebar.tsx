@@ -23,10 +23,15 @@ const navItems: NavItem[] = [
 
 export default function AdminSidebar() {
   const navigate = useNavigate()
+  const user = authApi.getCurrentUser()
+
+  const displayName = user?.fullName || 'System Admin'
+  const displayEmail = user?.email || user?.phone || 'admin@mediclaim.gov.in'
+  const initialChar = (displayName[0] || 'A').toUpperCase()
 
   const handleSignOut = async () => {
     await authApi.logout()
-    navigate('/auth')
+    navigate('/auth/admin')
   }
 
   return (
@@ -57,10 +62,10 @@ export default function AdminSidebar() {
       </nav>
 
       <div className="mt-auto hidden items-center gap-3 rounded-[20px] bg-mist p-3 min-[901px]:flex">
-        <span className={avatar}>A</span>
+        <span className={avatar}>{initialChar}</span>
         <div className="min-w-0">
-          <strong className="block truncate text-[0.92rem] font-semibold leading-tight">Admin</strong>
-          <small className="block truncate text-[0.78rem] text-ink-faint">System Administrator</small>
+          <strong className="block truncate text-[0.92rem] font-semibold leading-tight">{displayName}</strong>
+          <small className="block truncate text-[0.78rem] text-ink-faint">{displayEmail}</small>
         </div>
       </div>
 

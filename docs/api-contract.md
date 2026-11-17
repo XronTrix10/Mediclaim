@@ -202,7 +202,49 @@ Accepts 12-digit Mediclaim ID (digits or spaced) with password or verified OTP.
 
 ---
 
-### 3.4 Request Login SMS OTP
+### 3.4 Administrator Sign In
+`POST /api/v1/auth/admin/login`
+
+Authenticates administrative personnel using administrator username/email and password. Issues a scoped JWT bearer token with `role: "admin"`.
+
+#### Request Body
+```json
+{
+  "username": "admin@mediclaim.gov.in",
+  "password": "Admin@123"
+}
+```
+
+#### Response (`200 OK`)
+```json
+{
+  "status": "success",
+  "data": {
+    "accessToken": "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9...",
+    "tokenType": "Bearer",
+    "expiresIn": 86400,
+    "user": {
+      "id": "usr_00000000-0000-0000-0000-000000000001",
+      "fullName": "System Administrator",
+      "email": "admin@mediclaim.gov.in",
+      "phone": "+910000000000",
+      "role": "admin",
+      "mediclaimId": "ADMIN0000001",
+      "isActive": true,
+      "adminVerified": true,
+      "isProfileComplete": true
+    }
+  },
+  "meta": {
+    "requestId": "req_01J0A1B2C6",
+    "serverTime": "2026-11-16T22:32:30Z"
+  }
+}
+```
+
+---
+
+### 3.5 Request Login SMS OTP
 `POST /api/v1/auth/otp/request`
 
 #### Request Body

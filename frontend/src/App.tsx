@@ -8,6 +8,7 @@ import Dashboard from './pages/Dashboard'
 import Timeline from './pages/Timeline'
 import Records from './pages/Records'
 import Access from './pages/Access'
+import AdminLogin from './pages/admin/AdminLogin'
 import AdminOverview from './pages/admin/AdminOverview'
 import AdminVerifications from './pages/admin/AdminVerifications'
 import AdminPatients from './pages/admin/AdminPatients'
@@ -22,8 +23,10 @@ export default function App() {
         <Route path="/" element={<Landing />} />
       </Route>
       <Route path="/auth" element={<Auth />} />
+      <Route path="/auth/admin" element={<AdminLogin />} />
       <Route path="/login" element={<Navigate to="/auth" replace />} />
       <Route path="/register" element={<Navigate to="/auth?mode=register" replace />} />
+      <Route path="/admin/login" element={<Navigate to="/auth/admin" replace />} />
 
       {/* TODO: wrap in a route guard once auth is wired up (src/auth/) */}
       <Route path="/app" element={<AppLayout />}>

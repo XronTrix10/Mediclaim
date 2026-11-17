@@ -9,3 +9,5 @@ JWT_ALGORITHM = "HS256"
 ACCESS_TOKEN_SECONDS = 24 * 60 * 60
 OTP_SECONDS = 300
 OTP_DEBUG = os.getenv("OTP_DEBUG", "true").lower() == "true"
+ADMIN_EMAIL = os.getenv("ADMIN_EMAIL", "admin@mediclaim.gov.in")
+ADMIN_PASSWORD = os.getenv("ADMIN_PASSWORD", "Admin@123")

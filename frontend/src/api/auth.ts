@@ -75,6 +75,22 @@ export const authApi = {
     return res.data
   },
 
+  async adminLogin(payload: {
+    username: string
+    password: string
+  }): Promise<AuthSession> {
+    const res = await api.post<{ status: string; data: AuthSession }>('/auth/admin/login', payload)
+    setStoredToken(res.data.accessToken)
+    setStoredUser(res.data.user)
+    return res.data
+  },
+
+  isAdmin(): boolean {
+    const user = getStoredUser()
+    const token = getStoredToken()
+    return !!token && !!user && (user.role === 'admin' || user.role === 'hospital_admin')
+  },
+
   async requestOtp(mediclaimId: string): Promise<RequestOtpResult> {
     const res = await api.post<{ status: string; data: RequestOtpResult }>('/auth/request-otp', {
       mediclaimId,
