@@ -90,6 +90,7 @@ def get_current_user_profile(current_user: AuthenticatedUser = Depends(get_curre
 
 
 @router.post("/otp/request", response_model=RequestOTPResponse, status_code=status.HTTP_200_OK)
+@router.post("/request-otp", response_model=RequestOTPResponse, status_code=status.HTTP_200_OK)
 def request_otp(payload: RequestOTPRequest):
     data = request_login_otp(payload)
     return {

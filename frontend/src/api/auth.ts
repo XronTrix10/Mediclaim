@@ -92,7 +92,7 @@ export const authApi = {
   },
 
   async requestOtp(mediclaimId: string): Promise<RequestOtpResult> {
-    const res = await api.post<{ status: string; data: RequestOtpResult }>('/auth/request-otp', {
+    const res = await api.post<{ status: string; data: RequestOtpResult }>('/auth/otp/request', {
       mediclaimId,
     })
     return res.data
