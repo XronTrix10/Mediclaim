@@ -32,6 +32,7 @@ import {
   auditApi,
   correctionsApi,
 } from '../api'
+import { getStoredUser, setStoredUser } from '../api/client'
 
 const STORAGE_KEY = 'mediclaim:v2'
 const LEGACY = {
@@ -81,11 +82,37 @@ function serialize(state: HealthState): HealthState {
 
 function loadInitial(): HealthState {
   const now = Date.now()
+  const curUser = getStoredUser()
   const saved = readJSON<HealthState>(STORAGE_KEY)
-  if (saved?.profile) return { ...seedState(now), ...saved }
 
-  // One-time import from the first version of the dashboard, which used separate keys.
+  // If saved state matches the authenticated user, restore it
+  if (saved?.profile) {
+    const isSameUser = !curUser ||
+      saved.profile.userId === curUser.id ||
+      saved.profile.mediclaimId?.replace(/\s/g, '') === curUser.mediclaimId?.replace(/\s/g, '')
+
+    if (isSameUser) {
+      if (curUser?.isProfileComplete) {
+        saved.profile.isProfileComplete = true
+      }
+      return { ...seedState(now), ...saved }
+    }
+  }
+
+  // Fresh state for the current authenticated user
   const state = seedState(now)
+  if (curUser) {
+    state.profile = {
+      ...state.profile,
+      userId: curUser.id,
+      fullName: curUser.fullName,
+      firstName: curUser.fullName.split(' ')[0],
+      phone: curUser.phone,
+      mediclaimId: curUser.mediclaimId || state.profile.mediclaimId,
+      isProfileComplete: Boolean(curUser.isProfileComplete),
+    }
+    return state
+  }
   const legacyProfile = readJSON<HealthState['profile']>(LEGACY.patient)
   const legacyRx = readJSON<PrescriptionRecord[]>(LEGACY.prescriptions)
   const legacyAllergies = readJSON<
@@ -382,6 +409,7 @@ export default function HealthDataProvider({ children }: { children: ReactNode }
               phone: '',
               relation: 'Parent',
             },
+            isProfileComplete: Boolean(p.isProfileComplete),
           }
         }
 
@@ -443,32 +471,33 @@ export default function HealthDataProvider({ children }: { children: ReactNode }
   const actions = useMemo<HealthActions>(
     () => ({
       completeProfile: async (payload) => {
-        dispatch({ type: 'profile/complete', payload, now: Date.now() })
         if (authApi.isAuthenticated()) {
-          try {
-            const updated = await patientApi.completeProfile(payload)
-            dispatch({
-              type: 'profile/hydrated',
-              profile: {
-                ...updated,
-                gender: (updated.gender || '') as Gender,
-                bloodGroup: (updated.bloodGroup || '') as BloodGroup,
-                address: updated.address || '',
-                emergencyContact: updated.emergencyContact || {
-                  name: payload.emergencyName,
-                  phone: payload.emergencyPhone,
-                  relation: payload.emergencyRelation,
-                },
+          const updated = await patientApi.completeProfile(payload)
+          dispatch({
+            type: 'profile/hydrated',
+            profile: {
+              ...updated,
+              gender: (updated.gender || payload.gender) as Gender,
+              bloodGroup: (updated.bloodGroup || payload.bloodGroup) as BloodGroup,
+              address: updated.address || payload.address,
+              emergencyContact: updated.emergencyContact || {
+                name: payload.emergencyName,
+                phone: payload.emergencyPhone,
+                relation: payload.emergencyRelation,
               },
-            })
-          } catch (e) {
-            console.warn('Backend complete profile sync failed:', e)
+              isProfileComplete: true,
+            },
+          })
+          const curUser = authApi.getCurrentUser()
+          if (curUser) {
+            setStoredUser({ ...curUser, isProfileComplete: true })
           }
+        } else {
+          dispatch({ type: 'profile/complete', payload, now: Date.now() })
         }
       },
 
       updatePermittedDetails: async (update) => {
-        dispatch({ type: 'profile/update', update, now: Date.now() })
         if (authApi.isAuthenticated()) {
           try {
             const updated = await patientApi.updatePermittedDetails(update)
@@ -478,17 +507,21 @@ export default function HealthDataProvider({ children }: { children: ReactNode }
                 ...updated,
                 gender: (updated.gender || '') as Gender,
                 bloodGroup: (updated.bloodGroup || '') as BloodGroup,
-                address: updated.address || '',
-                emergencyContact: updated.emergencyContact || {
+                address: updated.address || (update.address ?? ''),
+                emergencyContact: updated.emergencyContact || update.emergencyContact || {
                   name: '',
                   phone: '',
                   relation: 'Parent',
                 },
+                isProfileComplete: updated.isProfileComplete ?? true,
               },
             })
           } catch (e) {
             console.warn('Backend update permitted details sync failed:', e)
+            dispatch({ type: 'profile/update', update, now: Date.now() })
           }
+        } else {
+          dispatch({ type: 'profile/update', update, now: Date.now() })
         }
       },
 

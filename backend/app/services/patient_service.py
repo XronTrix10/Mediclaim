@@ -99,26 +99,45 @@ def complete_patient_profile(user_id: str, payload) -> Dict[str, Any]:
             )
 
         # Update or insert patient profile
-        conn.execute("""
-            UPDATE patient_profiles
-            SET gender = %s,
-                blood_group = %s,
-                address = %s,
-                emergency_contact_name = %s,
-                emergency_contact_phone = %s,
-                emergency_contact_relation = %s,
-                updated_at = %s
-            WHERE user_id = %s
-        """, (
-            payload.gender,
-            payload.bloodGroup,
-            payload.address,
-            payload.emergencyName,
-            payload.emergencyPhone,
-            payload.emergencyRelation,
-            now,
-            raw_user_id
-        ))
+        pat_profile = conn.execute("SELECT id FROM patient_profiles WHERE user_id = %s", (raw_user_id,)).fetchone()
+        if not pat_profile:
+            import secrets
+            pat_pub_id = f"pat{secrets.randbelow(900_000_000) + 100_000_000}"
+            conn.execute("""
+                INSERT INTO patient_profiles (
+                    public_id, user_id, date_of_birth, gender, blood_group,
+                    address, emergency_contact_name, emergency_contact_phone,
+                    emergency_contact_relation, created_at, updated_at
+                ) VALUES (
+                    %s, %s, '1990-01-01', %s, %s,
+                    %s, %s, %s, %s, %s, %s
+                )
+            """, (
+                pat_pub_id, raw_user_id, payload.gender, payload.bloodGroup,
+                payload.address, payload.emergencyName, payload.emergencyPhone,
+                payload.emergencyRelation, now, now
+            ))
+        else:
+            conn.execute("""
+                UPDATE patient_profiles
+                SET gender = %s,
+                    blood_group = %s,
+                    address = %s,
+                    emergency_contact_name = %s,
+                    emergency_contact_phone = %s,
+                    emergency_contact_relation = %s,
+                    updated_at = %s
+                WHERE user_id = %s
+            """, (
+                payload.gender,
+                payload.bloodGroup,
+                payload.address,
+                payload.emergencyName,
+                payload.emergencyPhone,
+                payload.emergencyRelation,
+                now,
+                raw_user_id
+            ))
 
         # Mark user profile as complete
         conn.execute("""
@@ -180,26 +199,8 @@ def update_permitted_details(user_id: str, payload) -> Dict[str, Any]:
                 raw_user_id
             ))
 
-        # Re-fetch updated profile to return
-        profile = conn.execute("""
-            SELECT u.phone, p.address, p.emergency_contact_name,
-                   p.emergency_contact_phone, p.emergency_contact_relation
-            FROM users u
-            JOIN patient_profiles p ON p.user_id = u.id
-            WHERE u.id = %s
-        """, (raw_user_id,)).fetchone()
+        # If address and emergency contact are present, ensure profile_complete is set
+        if payload.address and payload.emergencyContact:
+            conn.execute("UPDATE users SET profile_complete = true, updated_at = %s WHERE id = %s", (now, raw_user_id))
 
-    emergency_dict = None
-    if profile["emergency_contact_name"] or profile["emergency_contact_phone"]:
-        emergency_dict = {
-            "name": profile["emergency_contact_name"] or "",
-            "phone": profile["emergency_contact_phone"] or "",
-            "relation": profile["emergency_contact_relation"] or "Other"
-        }
-
-    return {
-        "phone": profile["phone"],
-        "address": profile["address"],
-        "emergencyContact": emergency_dict,
-        "updatedAt": now_str
-    }
+    return get_patient_profile(user_id)

@@ -35,8 +35,8 @@ export interface GiveAccessInput {
 }
 
 export interface HealthActions {
-  completeProfile: (payload: ProfileCompletionPayload) => void
-  updatePermittedDetails: (update: PermittedPersonalDetailsUpdate) => void
+  completeProfile: (payload: ProfileCompletionPayload) => Promise<void> | void
+  updatePermittedDetails: (update: PermittedPersonalDetailsUpdate) => Promise<void> | void
   addAllergy: (input: NewAllergyInput) => void
   addPrescription: (rx: Omit<PrescriptionRecord, 'id'>) => void
   removePrescription: (id: string) => void

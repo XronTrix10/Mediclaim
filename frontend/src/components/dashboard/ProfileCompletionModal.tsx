@@ -11,7 +11,7 @@ const relations: EmergencyRelation[] = ['Parent', 'Spouse', 'Sibling', 'Child', 
 
 interface ProfileCompletionModalProps {
   initialName?: string
-  onComplete: (payload: ProfileCompletionPayload) => void
+  onComplete: (payload: ProfileCompletionPayload) => Promise<void> | void
 }
 
 export default function ProfileCompletionModal({ initialName, onComplete }: ProfileCompletionModalProps) {
@@ -24,14 +24,18 @@ export default function ProfileCompletionModal({ initialName, onComplete }: Prof
     emergencyRelation: '',
   })
   const [errors, setErrors] = useState<Partial<Record<keyof ProfileCompletionPayload, string>>>({})
+  const [submitting, setSubmitting] = useState(false)
+  const [apiError, setApiError] = useState<string | null>(null)
 
   const set = (key: keyof ProfileCompletionPayload) => (e: ChangeEvent<HTMLInputElement | HTMLSelectElement | HTMLTextAreaElement>) => {
     setForm((prev) => ({ ...prev, [key]: e.target.value }))
     setErrors((prev) => ({ ...prev, [key]: undefined }))
+    setApiError(null)
   }
 
-  const submit = (e: FormEvent) => {
+  const submit = async (e: FormEvent) => {
     e.preventDefault()
+    setApiError(null)
     const next: typeof errors = {}
     if (!form.gender) next.gender = 'Choose a gender.'
     if (!form.bloodGroup) next.bloodGroup = 'Choose a blood group.'
@@ -40,7 +44,16 @@ export default function ProfileCompletionModal({ initialName, onComplete }: Prof
     if (!isValidPhone(form.emergencyPhone)) next.emergencyPhone = 'Enter a valid phone number.'
     if (!form.emergencyRelation) next.emergencyRelation = 'Choose a relationship.'
     setErrors(next)
-    if (Object.keys(next).length === 0) onComplete(form)
+    if (Object.keys(next).length === 0) {
+      setSubmitting(true)
+      try {
+        await onComplete(form)
+      } catch (err: any) {
+        setApiError(err?.message || 'Failed to save profile. Please check the details and try again.')
+      } finally {
+        setSubmitting(false)
+      }
+    }
   }
 
   const err = (key: keyof ProfileCompletionPayload) =>
@@ -64,6 +77,11 @@ export default function ProfileCompletionModal({ initialName, onComplete }: Prof
       description={`${initialName ? `Welcome, ${initialName}. ` : ''}We need a few details to set up your health record.`}
     >
       <form onSubmit={submit} className="grid gap-5" noValidate>
+        {apiError && (
+          <div role="alert" className="rounded-xl bg-allergy-tint p-3 text-sm font-medium text-allergy-ink">
+            {apiError}
+          </div>
+        )}
         <div className="grid gap-4 sm:grid-cols-2">
           <div className="grid gap-1.5">
             <label htmlFor="p-gender" className={label}>
@@ -153,8 +171,8 @@ export default function ProfileCompletionModal({ initialName, onComplete }: Prof
         </fieldset>
 
         <div>
-          <button className={`${button('primary', 'lg')} w-full`} type="submit">
-            Save and continue
+          <button className={`${button('primary', 'lg')} w-full cursor-pointer justify-center`} type="submit" disabled={submitting}>
+            {submitting ? 'Saving details…' : 'Save and continue'}
           </button>
           <p className="mt-2 text-center text-[0.8rem] text-ink-faint">
             You can change your phone numbers and address later.
