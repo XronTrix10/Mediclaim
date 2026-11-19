@@ -39,28 +39,40 @@ def list_pending_verifications(
     limit: int = 50,
     offset: int = 0,
     search_query: Optional[str] = None,
+    status_filter: Optional[str] = None,
 ) -> Tuple[List[Dict[str, Any]], int]:
     with get_db() as conn:
         base_sql = """
             FROM users u
             JOIN user_roles ur ON ur.user_id = u.id
             LEFT JOIN patient_profiles p ON p.user_id = u.id
-            WHERE u.admin_verified = false AND u.is_active = true
+            WHERE u.is_active = true
         """
         params: List[Any] = []
-        if search_query:
-            base_sql += " AND (u.full_name ILIKE %s OR u.phone ILIKE %s OR u.aadhaar_number ILIKE %s)"
-            q = f"%{search_query.strip()}%"
-            params.extend([q, q, q])
 
-        count_sql = f"SELECT COUNT(*) {base_sql}"
+        clean_status = (status_filter or "").strip().lower()
+        if clean_status == "verified":
+            base_sql += " AND u.admin_verified = true"
+        elif clean_status == "all":
+            pass
+        else:
+            base_sql += " AND u.admin_verified = false"
+
+        if search_query:
+            base_sql += " AND (u.full_name ILIKE %s OR u.phone ILIKE %s OR u.aadhaar_number ILIKE %s OR u.mediclaim_id ILIKE %s)"
+            q = f"%{search_query.strip()}%"
+            params.extend([q, q, q, q])
+
+        count_sql = f"SELECT COUNT(DISTINCT u.id) {base_sql}"
         total = conn.execute(count_sql, tuple(params)).fetchone()["count"]
 
         data_sql = f"""
-            SELECT u.id, u.full_name, u.phone, u.aadhaar_number, u.created_at,
-                   p.date_of_birth
+            SELECT DISTINCT ON (u.created_at, u.id)
+                   u.id, u.full_name, u.phone, u.mediclaim_id, u.aadhaar_number, u.admin_verified, u.created_at,
+                   ur.role,
+                   p.date_of_birth, p.gender, p.blood_group, p.address
             {base_sql}
-            ORDER BY u.created_at DESC
+            ORDER BY u.created_at DESC, u.id
             LIMIT %s OFFSET %s
         """
         params.extend([limit, offset])
@@ -74,10 +86,15 @@ def list_pending_verifications(
             "fullName": r["full_name"],
             "dateOfBirth": dob_str,
             "phone": r["phone"],
+            "mediclaimId": format_mediclaim_id(r["mediclaim_id"]) if r.get("mediclaim_id") else None,
             "aadhaarMasked": _mask_aadhaar(r["aadhaar_number"]),
-            "accountStatus": "pending_admin_approval",
+            "accountStatus": "active" if r["admin_verified"] else "pending_admin_approval",
             "phoneVerified": True,
-            "adminVerified": False,
+            "adminVerified": bool(r["admin_verified"]),
+            "role": r.get("role"),
+            "gender": r.get("gender"),
+            "bloodGroup": r.get("blood_group"),
+            "address": r.get("address"),
             "registeredAt": r["created_at"].strftime("%Y-%m-%dT%H:%M:%SZ") if r.get("created_at") else _now_iso(),
         })
 
@@ -88,11 +105,22 @@ def get_verification_detail(user_id: str) -> Dict[str, Any]:
     raw_uuid = _clean_user_id(user_id)
     with get_db() as conn:
         row = conn.execute("""
-            SELECT u.id, u.full_name, u.phone, u.aadhaar_number, u.admin_verified, u.is_active, u.created_at,
+            SELECT u.id, u.full_name, u.phone, u.mediclaim_id, u.aadhaar_number, u.admin_verified, u.is_active, u.created_at,
+                   ur.role,
                    p.id AS patient_id, p.date_of_birth, p.gender, p.blood_group, p.address,
-                   p.emergency_contact_name, p.emergency_contact_phone, p.emergency_contact_relation
+                   p.emergency_contact_name, p.emergency_contact_phone, p.emergency_contact_relation,
+                   pr.id AS practitioner_id, pr.registration_number, pr.specialization, pr.qualification,
+                   ho.name AS organization_name
             FROM users u
+            LEFT JOIN (
+                SELECT user_id, MIN(role) AS role
+                FROM user_roles
+                GROUP BY user_id
+            ) ur ON ur.user_id = u.id
             LEFT JOIN patient_profiles p ON p.user_id = u.id
+            LEFT JOIN practitioner_profiles pr ON pr.user_id = u.id
+            LEFT JOIN organization_memberships om ON om.user_id = u.id AND om.is_active = true
+            LEFT JOIN healthcare_organizations ho ON ho.id = om.organization_id
             WHERE u.id = %s
         """, (raw_uuid,)).fetchone()
 
@@ -118,14 +146,20 @@ def get_verification_detail(user_id: str) -> Dict[str, Any]:
         "fullName": row["full_name"],
         "dateOfBirth": dob_str,
         "phone": row["phone"],
+        "mediclaimId": format_mediclaim_id(row["mediclaim_id"]) if row.get("mediclaim_id") else None,
         "aadhaarMasked": _mask_aadhaar(row["aadhaar_number"]),
         "accountStatus": "active" if row["admin_verified"] else "pending_admin_approval",
         "phoneVerified": True,
         "adminVerified": bool(row["admin_verified"]),
+        "role": row.get("role") or "patient",
         "gender": row.get("gender"),
         "bloodGroup": row.get("blood_group"),
         "address": row.get("address"),
         "emergencyContact": emergency_contact,
+        "specialization": row.get("specialization"),
+        "registrationNumber": row.get("registration_number"),
+        "qualification": row.get("qualification"),
+        "organizationName": row.get("organization_name"),
         "registeredAt": row["created_at"].strftime("%Y-%m-%dT%H:%M:%SZ") if row.get("created_at") else _now_iso(),
     }
 

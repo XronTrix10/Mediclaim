@@ -4,7 +4,7 @@ import Modal from '../../components/Modal'
 import Icon from '../../components/Icon'
 import { button, card, emptyBox, input, select, label as labelCls, avatar } from '../../lib/ui'
 import { formatDate, initials } from '../../lib/format'
-import { getPractitioners, onboardPractitioner, getOrganizations } from '../../api/hospital'
+import { getPractitioners, onboardPractitioner, getOrganizations, getPractitionerDetail } from '../../api/hospital'
 import type { PractitionerSummary, PractitionerCreateInput, OrganizationSummary } from '../../api/hospital'
 
 function SkeletonRow() {
@@ -186,6 +186,129 @@ function OnboardModal({ open, orgs, onClose, onCreated }: OnboardModalProps) {
   )
 }
 
+interface PractitionerDetailModalProps {
+  open: boolean
+  practitionerId: string | null
+  onClose: () => void
+}
+
+function PractitionerDetailModal({ open, practitionerId, onClose }: PractitionerDetailModalProps) {
+  const [practitioner, setPractitioner] = useState<PractitionerSummary | null>(null)
+  const [loading, setLoading] = useState(false)
+  const [err, setErr] = useState<string | null>(null)
+
+  useEffect(() => {
+    if (!open || !practitionerId) return
+    setPractitioner(null)
+    setErr(null)
+    setLoading(true)
+    getPractitionerDetail(practitionerId)
+      .then(setPractitioner)
+      .catch(() => setErr('Failed to load practitioner profile'))
+      .finally(() => setLoading(false))
+  }, [open, practitionerId])
+
+  const p = practitioner
+
+  return (
+    <Modal open={open} title="Practitioner Profile" icon="stethoscope" size="lg" onClose={onClose}>
+      {loading && (
+        <div className="space-y-3 py-2 animate-pulse">
+          {Array.from({ length: 4 }).map((_, i) => (
+            <div key={i} className="h-10 rounded-[14px] bg-line" />
+          ))}
+        </div>
+      )}
+      {err && !loading && (
+        <div className="rounded-[14px] bg-allergy-tint px-4 py-3 text-sm text-allergy-ink">{err}</div>
+      )}
+      {p && (
+        <div className="space-y-5">
+          {/* Header */}
+          <div className="flex items-center gap-3">
+            <span className="grid size-14 shrink-0 place-items-center rounded-full bg-brand-tint text-[1.1rem] font-semibold text-brand-deep">
+              {initials(p.fullName)}
+            </span>
+            <div className="min-w-0">
+              <strong className="block text-[1.1rem] font-semibold text-ink">{p.fullName}</strong>
+              <div className="flex items-center gap-2 mt-1">
+                <span className="rounded-full bg-[#e8f5e9] px-2.5 py-0.5 text-xs font-semibold text-[#2e7d32]">
+                  Registered Practitioner
+                </span>
+                {p.specialization && (
+                  <span className="rounded-full bg-surface-tint px-2 py-0.5 text-xs font-medium text-ink-soft">
+                    {p.specialization}
+                  </span>
+                )}
+              </div>
+            </div>
+          </div>
+
+          {/* Details Grid */}
+          <div className="grid gap-3 sm:grid-cols-2 text-sm">
+            <div>
+              <span className="block text-[0.78rem] font-semibold uppercase tracking-wide text-ink-faint mb-0.5">
+                Registration / License No.
+              </span>
+              <span className="font-mono text-ink font-medium">{p.registrationNumber}</span>
+            </div>
+            {p.specialization && (
+              <div>
+                <span className="block text-[0.78rem] font-semibold uppercase tracking-wide text-ink-faint mb-0.5">
+                  Specialization
+                </span>
+                <span className="text-ink">{p.specialization}</span>
+              </div>
+            )}
+            {p.qualification && (
+              <div>
+                <span className="block text-[0.78rem] font-semibold uppercase tracking-wide text-ink-faint mb-0.5">
+                  Qualification
+                </span>
+                <span className="text-ink">{p.qualification}</span>
+              </div>
+            )}
+            <div>
+              <span className="block text-[0.78rem] font-semibold uppercase tracking-wide text-ink-faint mb-0.5">
+                Phone
+              </span>
+              <span className="text-ink">{p.phone}</span>
+            </div>
+            {p.email && (
+              <div>
+                <span className="block text-[0.78rem] font-semibold uppercase tracking-wide text-ink-faint mb-0.5">
+                  Email
+                </span>
+                <span className="text-ink">{p.email}</span>
+              </div>
+            )}
+            <div>
+              <span className="block text-[0.78rem] font-semibold uppercase tracking-wide text-ink-faint mb-0.5">
+                Onboarded Date
+              </span>
+              <span className="text-ink">{formatDate(p.createdAt)}</span>
+            </div>
+            {p.organization && (
+              <div className="sm:col-span-2">
+                <span className="block text-[0.78rem] font-semibold uppercase tracking-wide text-ink-faint mb-0.5">
+                  Affiliated Organization
+                </span>
+                <span className="text-ink font-medium">{p.organization.name}</span>
+              </div>
+            )}
+          </div>
+
+          <div className="flex justify-end border-t border-line pt-4">
+            <button type="button" onClick={onClose} className={button('ghost', 'sm')}>
+              Close
+            </button>
+          </div>
+        </div>
+      )}
+    </Modal>
+  )
+}
+
 export default function AdminPractitioners() {
   const [practitioners, setPractitioners] = useState<PractitionerSummary[]>([])
   const [total, setTotal] = useState(0)
@@ -194,6 +317,8 @@ export default function AdminPractitioners() {
   const [search, setSearch] = useState('')
   const [debouncedSearch, setDebouncedSearch] = useState('')
   const [onboardOpen, setOnboardOpen] = useState(false)
+  const [selectedPractitionerId, setSelectedPractitionerId] = useState<string | null>(null)
+  const [detailOpen, setDetailOpen] = useState(false)
   const [page, setPage] = useState(1)
   const limit = 20
 
@@ -223,6 +348,11 @@ export default function AdminPractitioners() {
   }, [])
 
   const totalPages = Math.ceil(total / limit)
+
+  const openPractitionerDetail = (id: string) => {
+    setSelectedPractitionerId(id)
+    setDetailOpen(true)
+  }
 
   return (
     <div>
@@ -263,18 +393,20 @@ export default function AdminPractitioners() {
         ) : (
           <>
             {/* Desktop header */}
-            <div className="mb-2 hidden grid-cols-[2fr_1.5fr_1.5fr_2fr_1fr] gap-4 px-1 text-[0.78rem] font-semibold uppercase tracking-wide text-ink-faint sm:grid">
+            <div className="mb-2 hidden grid-cols-[2fr_1.5fr_1.5fr_2fr_1fr_auto] gap-4 px-3 text-[0.78rem] font-semibold uppercase tracking-wide text-ink-faint sm:grid">
               <span>Practitioner</span>
               <span>Reg. Number</span>
               <span>Specialization</span>
               <span>Organization</span>
               <span>Joined</span>
+              <span className="sr-only">Actions</span>
             </div>
             <div className="divide-y divide-line">
               {practitioners.map((p) => (
                 <div
                   key={p.id}
-                  className="flex items-center gap-4 py-3.5 sm:grid sm:grid-cols-[2fr_1.5fr_1.5fr_2fr_1fr]"
+                  onClick={() => openPractitionerDetail(p.id)}
+                  className="flex items-center gap-4 py-3.5 px-3 rounded-2xl cursor-pointer hover:bg-surface-tint/60 transition-colors sm:grid sm:grid-cols-[2fr_1.5fr_1.5fr_2fr_1fr_auto]"
                 >
                   <div className="flex items-center gap-3 min-w-0">
                     <span className={`${avatar} shrink-0`}>{initials(p.fullName)}</span>
@@ -287,6 +419,9 @@ export default function AdminPractitioners() {
                   <span className="hidden text-[0.88rem] text-ink-soft sm:block">{p.specialization ?? '—'}</span>
                   <span className="hidden text-[0.88rem] text-ink-soft sm:block">{p.organization?.name ?? '—'}</span>
                   <span className="hidden text-[0.82rem] text-ink-soft sm:block">{formatDate(p.createdAt)}</span>
+                  <div className="flex items-center justify-end">
+                    <Icon name="chevron-right" size={16} className="text-ink-faint hidden sm:block" />
+                  </div>
                 </div>
               ))}
             </div>
@@ -323,6 +458,12 @@ export default function AdminPractitioners() {
         orgs={orgs}
         onClose={() => setOnboardOpen(false)}
         onCreated={load}
+      />
+
+      <PractitionerDetailModal
+        open={detailOpen}
+        practitionerId={selectedPractitionerId}
+        onClose={() => setDetailOpen(false)}
       />
     </div>
   )

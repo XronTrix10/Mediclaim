@@ -11,10 +11,22 @@ export interface PendingVerification {
   bloodGroup?: string
   adminVerified: boolean
   registeredAt: string
+  mediclaimId?: string
+  role?: string
 }
 
 export interface VerificationDetail extends PendingVerification {
   mediclaimIdAllocated?: string
+  accountStatus?: string
+  emergencyContact?: {
+    name: string
+    phone: string
+    relation: string
+  }
+  specialization?: string
+  registrationNumber?: string
+  qualification?: string
+  organizationName?: string
 }
 
 export interface AdminStats {
@@ -45,11 +57,13 @@ export async function getPendingVerifications(params?: {
   limit?: number
   offset?: number
   query?: string
+  status?: 'pending' | 'verified' | 'all'
 }): Promise<PendingVerification[]> {
   const query = new URLSearchParams()
   if (params?.limit) query.set('limit', String(params.limit))
   if (params?.offset) query.set('offset', String(params.offset))
   if (params?.query) query.set('query', params.query)
+  if (params?.status) query.set('status', params.status)
 
   const res = await request<{ status: string; data: PendingVerification[] }>(
     `/admin/verifications?${query.toString()}`

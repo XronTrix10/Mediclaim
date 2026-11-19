@@ -12,7 +12,7 @@ import {
 } from '../../api/admin'
 import type { PendingVerification, VerificationDetail } from '../../api/admin'
 
-type Tab = 'pending' | 'all'
+type Tab = 'pending' | 'verified' | 'all'
 
 function SkeletonRow() {
   return (
@@ -30,7 +30,7 @@ function SkeletonRow() {
 
 function StatusBadge({ approved }: { approved: boolean }) {
   return approved ? (
-    <span className="rounded-full bg-[#e8f5e9] px-2.5 py-0.5 text-xs font-semibold text-[#2e7d32]">Approved</span>
+    <span className="rounded-full bg-[#e8f5e9] px-2.5 py-0.5 text-xs font-semibold text-[#2e7d32]">Verified</span>
   ) : (
     <span className="rounded-full bg-[#fff7e6] px-2.5 py-0.5 text-xs font-semibold text-[#b45309]">Pending</span>
   )
@@ -63,7 +63,7 @@ function DetailModal({ open, userId, onClose, onActionDone }: DetailModalProps) 
     setErr(null)
     getPatientVerificationDetail(userId)
       .then(setDetail)
-      .catch(() => setErr('Failed to load patient details'))
+      .catch(() => setErr('Failed to load user details'))
       .finally(() => setLoading(false))
   }, [open, userId])
 
@@ -76,7 +76,7 @@ function DetailModal({ open, userId, onClose, onActionDone }: DetailModalProps) 
       setApprovedResult({ mediclaimId: res.mediclaimId })
       onActionDone()
     } catch {
-      setErr('Failed to approve patient')
+      setErr('Failed to approve user')
     } finally {
       setApproving(false)
     }
@@ -91,7 +91,7 @@ function DetailModal({ open, userId, onClose, onActionDone }: DetailModalProps) 
       onActionDone()
       onClose()
     } catch {
-      setErr('Failed to reject patient')
+      setErr('Failed to reject user')
     } finally {
       setRejecting(false)
     }
@@ -100,7 +100,7 @@ function DetailModal({ open, userId, onClose, onActionDone }: DetailModalProps) 
   const d = detail
 
   return (
-    <Modal open={open} title="Patient Verification" icon="user" size="lg" onClose={onClose}>
+    <Modal open={open} title="User Verification & Profile" icon="user" size="lg" onClose={onClose}>
       {loading && (
         <div className="space-y-3 py-2 animate-pulse">
           {Array.from({ length: 5 }).map((_, i) => (
@@ -118,7 +118,7 @@ function DetailModal({ open, userId, onClose, onActionDone }: DetailModalProps) 
           </div>
           <h3 className="text-[1.1rem] font-semibold text-ink">Account Approved!</h3>
           <p className="mt-1 text-[0.9rem] text-ink-soft">
-            Mediclaim ID issued and sent to patient via SMS/email.
+            Mediclaim ID issued and dispatched to user.
           </p>
           <div className="mt-3 inline-block rounded-[12px] bg-white px-5 py-2.5 font-mono text-[1.1rem] font-bold tracking-wider text-brand shadow-soft">
             {approvedResult.mediclaimId}
@@ -132,49 +132,110 @@ function DetailModal({ open, userId, onClose, onActionDone }: DetailModalProps) 
       )}
       {d && !approvedResult && (
         <div className="space-y-5">
-          {/* Avatar + name */}
+          {/* Avatar + name + role */}
           <div className="flex items-center gap-3">
             <span className="grid size-14 shrink-0 place-items-center rounded-full bg-brand-tint text-[1.1rem] font-semibold text-brand-deep">
               {initials(d.fullName)}
             </span>
-            <div>
+            <div className="min-w-0">
               <strong className="block text-[1.1rem] font-semibold text-ink">{d.fullName}</strong>
-              <StatusBadge approved={d.adminVerified} />
+              <div className="flex items-center gap-2 mt-1">
+                <StatusBadge approved={d.adminVerified} />
+                {d.role && d.role !== 'patient' && (
+                  <span className="rounded-full bg-surface-tint px-2 py-0.5 text-xs font-medium text-ink-soft capitalize">
+                    {d.role.replace('_', ' ')}
+                  </span>
+                )}
+                {d.mediclaimId && (
+                  <span className="font-mono text-xs text-brand font-semibold bg-brand-tint/50 px-2 py-0.5 rounded-md">
+                    {d.mediclaimId}
+                  </span>
+                )}
+              </div>
             </div>
           </div>
 
           {/* Details grid */}
-          <div className="grid gap-3 sm:grid-cols-2">
-            <div>
-              <span className={`${label} mb-1 block`}>Date of Birth</span>
-              <span className="text-[0.95rem] text-ink">{formatDate(d.dateOfBirth)}</span>
-            </div>
-            <div>
-              <span className={`${label} mb-1 block`}>Gender</span>
-              <span className="text-[0.95rem] text-ink capitalize">{d.gender || '—'}</span>
-            </div>
-            <div>
-              <span className={`${label} mb-1 block`}>Blood Group</span>
-              <span className="text-[0.95rem] text-ink">{d.bloodGroup || '—'}</span>
-            </div>
+          <div className="grid gap-3 sm:grid-cols-2 text-sm">
+            {d.mediclaimId && (
+              <div>
+                <span className={`${label} mb-1 block`}>Mediclaim ID</span>
+                <span className="font-mono font-medium text-ink">{d.mediclaimId}</span>
+              </div>
+            )}
             <div>
               <span className={`${label} mb-1 block`}>Phone</span>
-              <span className="text-[0.95rem] text-ink">{d.phone}</span>
+              <span className="text-ink">{d.phone}</span>
             </div>
+            {d.dateOfBirth && (
+              <div>
+                <span className={`${label} mb-1 block`}>Date of Birth</span>
+                <span className="text-ink">{formatDate(d.dateOfBirth)}</span>
+              </div>
+            )}
+            {d.gender && (
+              <div>
+                <span className={`${label} mb-1 block`}>Gender</span>
+                <span className="text-ink capitalize">{d.gender}</span>
+              </div>
+            )}
+            {d.bloodGroup && (
+              <div>
+                <span className={`${label} mb-1 block`}>Blood Group</span>
+                <span className="text-ink font-semibold">{d.bloodGroup}</span>
+              </div>
+            )}
             <div>
               <span className={`${label} mb-1 block`}>Aadhaar (masked)</span>
-              <span className="font-mono text-[0.95rem] text-ink">{d.aadhaarMasked || '—'}</span>
+              <span className="font-mono text-ink">{d.aadhaarMasked || '—'}</span>
             </div>
             <div>
               <span className={`${label} mb-1 block`}>Registered</span>
-              <span className="text-[0.95rem] text-ink">{formatDate(d.registeredAt)}</span>
+              <span className="text-ink">{formatDate(d.registeredAt)}</span>
             </div>
+            {d.registrationNumber && (
+              <div>
+                <span className={`${label} mb-1 block`}>Registration Number</span>
+                <span className="font-mono text-ink">{d.registrationNumber}</span>
+              </div>
+            )}
+            {d.specialization && (
+              <div>
+                <span className={`${label} mb-1 block`}>Specialization</span>
+                <span className="text-ink">{d.specialization}</span>
+              </div>
+            )}
+            {d.qualification && (
+              <div>
+                <span className={`${label} mb-1 block`}>Qualification</span>
+                <span className="text-ink">{d.qualification}</span>
+              </div>
+            )}
+            {d.organizationName && (
+              <div className="sm:col-span-2">
+                <span className={`${label} mb-1 block`}>Affiliated Hospital</span>
+                <span className="text-ink font-medium">{d.organizationName}</span>
+              </div>
+            )}
           </div>
 
           {d.address && (
             <div>
               <span className={`${label} mb-1 block`}>Address</span>
-              <span className="text-[0.95rem] text-ink">{d.address}</span>
+              <span className="text-sm text-ink">{d.address}</span>
+            </div>
+          )}
+
+          {d.emergencyContact && d.emergencyContact.name && (
+            <div className="rounded-[14px] border border-line bg-surface p-3.5">
+              <span className="block text-[0.78rem] font-semibold uppercase tracking-wide text-ink-faint mb-1.5">
+                Emergency Contact
+              </span>
+              <div className="flex flex-wrap items-center gap-x-4 gap-y-1 text-sm">
+                <span className="font-medium text-ink">{d.emergencyContact.name}</span>
+                <span className="text-ink-soft">({d.emergencyContact.relation || 'Relation'})</span>
+                <span className="text-ink">{d.emergencyContact.phone}</span>
+              </div>
             </div>
           )}
 
@@ -238,10 +299,13 @@ function DetailModal({ open, userId, onClose, onActionDone }: DetailModalProps) 
           )}
 
           {d.adminVerified && (
-            <div className="border-t border-line pt-4">
-              <p className="text-sm text-ink-soft">
-                This patient has already been verified. No further action needed.
-              </p>
+            <div className="flex items-center justify-between border-t border-line pt-4">
+              <span className="text-sm text-ink-soft">
+                This account has been verified. No pending actions.
+              </span>
+              <button type="button" onClick={onClose} className={button('ghost', 'sm')}>
+                Close
+              </button>
             </div>
           )}
         </div>
@@ -255,46 +319,60 @@ export default function AdminVerifications() {
   const [items, setItems] = useState<PendingVerification[]>([])
   const [loading, setLoading] = useState(true)
   const [search, setSearch] = useState('')
+  const [debouncedSearch, setDebouncedSearch] = useState('')
   const [selectedId, setSelectedId] = useState<string | null>(null)
   const [modalOpen, setModalOpen] = useState(false)
+
+  // Debounce search input
+  useEffect(() => {
+    const t = setTimeout(() => setDebouncedSearch(search), 350)
+    return () => clearTimeout(t)
+  }, [search])
 
   const load = useCallback(async () => {
     setLoading(true)
     try {
-      const data = await getPendingVerifications({ query: search || undefined })
+      const data = await getPendingVerifications({
+        query: debouncedSearch.trim() || undefined,
+        status: tab,
+      })
       setItems(data)
     } finally {
       setLoading(false)
     }
-  }, [search])
+  }, [debouncedSearch, tab])
 
   useEffect(() => { load() }, [load])
-
-  const filtered = tab === 'pending' ? items.filter((i) => !i.adminVerified) : items
 
   const openDetail = (id: string) => {
     setSelectedId(id)
     setModalOpen(true)
   }
 
+  const TABS: { id: Tab; label: string }[] = [
+    { id: 'pending', label: 'Pending' },
+    { id: 'verified', label: 'Verified' },
+    { id: 'all', label: 'All' },
+  ]
+
   return (
     <div>
-      <PageHeader title="Patient Verifications" subtitle="Review and approve new patient registrations" />
+      <PageHeader title="User Verifications" subtitle="Review and approve patient and practitioner registrations" />
 
       {/* Tabs + search */}
       <div className="mb-5 flex flex-wrap items-center gap-3">
         <div className="flex gap-1 rounded-[14px] border border-line bg-white p-1">
-          {(['pending', 'all'] as Tab[]).map((t) => (
+          {TABS.map((t) => (
             <button
-              key={t}
+              key={t.id}
               type="button"
-              aria-pressed={tab === t}
-              onClick={() => setTab(t)}
+              aria-pressed={tab === t.id}
+              onClick={() => setTab(t.id)}
               className={`rounded-[10px] px-4 py-1.5 text-sm font-medium capitalize transition-colors ${
-                tab === t ? 'bg-brand text-white' : 'text-ink-soft hover:text-ink'
+                tab === t.id ? 'bg-brand text-white' : 'text-ink-soft hover:text-ink'
               }`}
             >
-              {t === 'pending' ? 'Pending' : 'All'}
+              {t.label}
             </button>
           ))}
         </div>
@@ -306,7 +384,7 @@ export default function AdminVerifications() {
           />
           <input
             type="search"
-            placeholder="Search by name or phone…"
+            placeholder="Search by name, phone, or ID…"
             value={search}
             onChange={(e) => setSearch(e.target.value)}
             className="w-full rounded-[14px] border border-line-strong bg-white py-2.5 pl-9 pr-4 text-sm placeholder:text-[#85999f] focus:border-brand focus:ring-4 focus:ring-brand/15 focus:outline-none"
@@ -320,11 +398,15 @@ export default function AdminVerifications() {
           <div className="divide-y divide-line">
             {Array.from({ length: 5 }).map((_, i) => <SkeletonRow key={i} />)}
           </div>
-        ) : filtered.length === 0 ? (
+        ) : items.length === 0 ? (
           <div className={emptyBox}>
             <Icon name="check" size={32} className="mx-auto mb-3 text-ink-faint" />
             <p className="font-semibold text-ink">
-              {tab === 'pending' ? 'No pending verifications' : 'No verifications found'}
+              {tab === 'pending'
+                ? 'No pending verifications'
+                : tab === 'verified'
+                ? 'No verified users found'
+                : 'No users found'}
             </p>
             <p className="mt-1 text-sm text-ink-faint">
               {tab === 'pending'
@@ -334,8 +416,12 @@ export default function AdminVerifications() {
           </div>
         ) : (
           <div className="divide-y divide-line">
-            {filtered.map((item) => (
-              <div key={item.userId} className="flex items-center gap-4 py-3.5">
+            {items.map((item) => (
+              <div
+                key={item.userId}
+                onClick={() => openDetail(item.userId)}
+                className="flex items-center gap-4 py-3.5 px-3 rounded-2xl cursor-pointer hover:bg-surface-tint/60 transition-colors"
+              >
                 <span className={`${avatar} shrink-0`}>{initials(item.fullName)}</span>
                 <div className="min-w-0 flex-1">
                   <div className="flex items-center gap-2">
@@ -343,6 +429,11 @@ export default function AdminVerifications() {
                       {item.fullName}
                     </strong>
                     <StatusBadge approved={item.adminVerified} />
+                    {item.mediclaimId && (
+                      <span className="hidden sm:inline-block font-mono text-xs text-ink-soft bg-surface px-2 py-0.5 rounded-md border border-line">
+                        {item.mediclaimId}
+                      </span>
+                    )}
                   </div>
                   <span className="block text-[0.82rem] text-ink-faint">
                     {item.phone} · Registered {formatWhen(item.registeredAt)}
@@ -350,10 +441,13 @@ export default function AdminVerifications() {
                 </div>
                 <button
                   type="button"
-                  onClick={() => openDetail(item.userId)}
+                  onClick={(e) => {
+                    e.stopPropagation()
+                    openDetail(item.userId)
+                  }}
                   className={button('soft', 'sm')}
                 >
-                  Review
+                  {item.adminVerified ? 'View Details' : 'Review'}
                 </button>
               </div>
             ))}
