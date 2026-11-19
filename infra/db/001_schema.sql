@@ -463,6 +463,10 @@ ON patient_access_grants (patient_id, id);
 CREATE OR REPLACE FUNCTION prevent_audit_event_mutation()
 RETURNS trigger AS $$
 BEGIN
+    -- Allow foreign key ON DELETE SET NULL cascades when users/profiles are removed
+    IF TG_OP = 'UPDATE' AND (NEW.actor_user_id IS NULL OR NEW.patient_id IS NULL) AND OLD.id = NEW.id AND OLD.action = NEW.action THEN
+        RETURN NEW;
+    END IF;
     RAISE EXCEPTION 'Audit history is immutable and cannot be updated or deleted.';
 END;
 $$ LANGUAGE plpgsql;

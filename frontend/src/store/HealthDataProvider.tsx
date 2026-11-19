@@ -160,6 +160,7 @@ type Action =
   | { type: 'profile/complete'; payload: ProfileCompletionPayload; now: number }
   | { type: 'profile/update'; update: PermittedPersonalDetailsUpdate; now: number }
   | { type: 'allergy/add'; input: NewAllergyInput; id: string; now: number }
+  | { type: 'event/add'; event: HealthEvent; now: number }
   | { type: 'rx/add'; rx: PrescriptionRecord; now: number }
   | { type: 'rx/remove'; id: string }
   | { type: 'sample/toggle' }
@@ -235,6 +236,14 @@ function reducer(state: HealthState, action: Action): HealthState {
         ...state,
         ownEvents: [event, ...state.ownEvents],
         audit: log(state, action.now, 'You', `recorded an allergy to ${event.title}`, 'upload'),
+      }
+    }
+    case 'event/add': {
+      const existing = state.ownEvents.filter((e) => e.id !== action.event.id)
+      return {
+        ...state,
+        ownEvents: [action.event, ...existing],
+        audit: log(state, action.now, 'You', `recorded ${action.event.title}`, 'upload'),
       }
     }
     case 'rx/add':
@@ -526,15 +535,152 @@ export default function HealthDataProvider({ children }: { children: ReactNode }
       },
 
       addAllergy: async (input) => {
-        const eventId = uid('alg')
-        dispatch({ type: 'allergy/add', input, id: eventId, now: Date.now() })
+        const now = Date.now()
+        let event: HealthEvent = {
+          id: uid('alg'),
+          kind: 'allergy',
+          title: input.allergen.trim(),
+          detail: input.notes?.trim() || input.reaction.trim(),
+          date: todayISO(new Date(now)),
+          provider: input.provider?.trim() || 'Self-reported',
+          status: 'active',
+          source: 'self_reported',
+          category: input.category,
+          severity: input.severity,
+          criticality: input.criticality,
+          reaction: input.reaction.trim(),
+          notes: input.notes?.trim() || undefined,
+        }
         if (authApi.isAuthenticated()) {
           try {
-            await recordsApi.addAllergy(input)
+            const saved = await recordsApi.addAllergy(input)
+            if (saved && saved.id) event = saved
           } catch (e) {
             console.warn('Backend add allergy sync failed:', e)
           }
         }
+        dispatch({ type: 'event/add', event, now })
+        return event
+      },
+
+      addVaccination: async (input) => {
+        const now = Date.now()
+        let event: HealthEvent = {
+          id: uid('vac'),
+          kind: 'vaccination',
+          title: input.vaccineName.trim(),
+          detail: input.notes?.trim() || `Dose ${input.doseNumber || 1}`,
+          date: input.administeredDate || todayISO(new Date(now)),
+          provider: input.provider?.trim() || 'Self-reported',
+          status: 'completed',
+          source: 'self_reported',
+          vaccineName: input.vaccineName.trim(),
+          doseNumber: input.doseNumber || 1,
+          batchNumber: input.batchNumber?.trim(),
+          administeredDate: input.administeredDate || todayISO(new Date(now)),
+          nextDueDate: input.nextDueDate,
+          notes: input.notes?.trim(),
+        }
+        if (authApi.isAuthenticated()) {
+          try {
+            const saved = await recordsApi.addVaccination(input)
+            if (saved && saved.id) event = saved
+          } catch (e) {
+            console.warn('Backend add vaccination sync failed:', e)
+          }
+        }
+        dispatch({ type: 'event/add', event, now })
+        return event
+      },
+
+      addCondition: async (input) => {
+        const now = Date.now()
+        let event: HealthEvent = {
+          id: uid('cond'),
+          kind: 'condition',
+          title: input.conditionName.trim(),
+          detail: input.notes?.trim() || `${input.severity || 'Active'} ${input.conditionName.trim()}`,
+          date: input.onsetDate || todayISO(new Date(now)),
+          provider: input.provider?.trim() || 'Self-reported',
+          status: input.status || 'active',
+          source: 'self_reported',
+          conditionName: input.conditionName.trim(),
+          onsetDate: input.onsetDate || todayISO(new Date(now)),
+          resolvedDate: input.resolvedDate,
+          notes: input.notes?.trim(),
+        }
+        if (authApi.isAuthenticated()) {
+          try {
+            const saved = await recordsApi.addCondition(input)
+            if (saved && saved.id) event = saved
+          } catch (e) {
+            console.warn('Backend add condition sync failed:', e)
+          }
+        }
+        dispatch({ type: 'event/add', event, now })
+        return event
+      },
+
+      addMedication: async (input) => {
+        const now = Date.now()
+        const detailParts: string[] = []
+        if (input.dosage) detailParts.push(input.dosage.trim())
+        if (input.instructions) detailParts.push(input.instructions.trim())
+        const detail = detailParts.join('. ') || input.medicationName.trim()
+
+        let event: HealthEvent = {
+          id: uid('med'),
+          kind: 'medication',
+          title: input.medicationName.trim(),
+          detail,
+          date: input.startDate || todayISO(new Date(now)),
+          provider: input.provider?.trim() || 'Self-reported',
+          status: input.status || 'active',
+          source: 'self_reported',
+          medicationName: input.medicationName.trim(),
+          dosage: input.dosage?.trim(),
+          instructions: input.instructions?.trim(),
+          startDate: input.startDate || todayISO(new Date(now)),
+          endDate: input.endDate,
+        }
+        if (authApi.isAuthenticated()) {
+          try {
+            const saved = await recordsApi.addMedication(input)
+            if (saved && saved.id) event = saved
+          } catch (e) {
+            console.warn('Backend add medication sync failed:', e)
+          }
+        }
+        dispatch({ type: 'event/add', event, now })
+        return event
+      },
+
+      addReport: async (input) => {
+        const now = Date.now()
+        let event: HealthEvent = {
+          id: uid('rep'),
+          kind: 'report',
+          title: input.reportName.trim(),
+          detail: input.conclusion?.trim() || `${input.reportType || 'Diagnostic'} report`,
+          date: input.reportDate || todayISO(new Date(now)),
+          provider: input.provider?.trim() || 'Diagnostic Centre',
+          status: 'completed',
+          source: 'self_reported',
+          reportName: input.reportName.trim(),
+          reportType: input.reportType || 'lab',
+          conclusion: input.conclusion?.trim(),
+          reportDate: input.reportDate || todayISO(new Date(now)),
+        }
+        if (authApi.isAuthenticated()) {
+          try {
+            const saved = await recordsApi.addReport(input)
+            if (saved && saved.id) event = saved
+          } catch (e) {
+            console.warn('Backend add report sync failed:', e)
+          }
+        }
+        dispatch({ type: 'event/add', event, now })
+        return event
       },
 
       addPrescription: async (rx) => {

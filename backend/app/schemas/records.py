@@ -55,50 +55,50 @@ class RecordDetailResponse(BaseModel):
     meta: Optional[EnvelopeMeta] = None
 
 class NewAllergyInput(BaseModel):
-    model_config = ConfigDict(extra="forbid")
+    model_config = ConfigDict(extra="ignore")
     allergen: str = Field(min_length=1, max_length=255)
-    category: AllergyCategoryType
-    severity: AllergySeverityType
-    criticality: AllergyCriticalityType
+    category: Optional[AllergyCategoryType] = "medication"
+    severity: Optional[AllergySeverityType] = "moderate"
+    criticality: Optional[AllergyCriticalityType] = "low"
     reaction: str = Field(min_length=1, max_length=500)
-    provider: str = Field(min_length=1, max_length=255)
+    provider: Optional[str] = "Self-reported"
     notes: Optional[str] = None
     identifiedDate: Optional[date] = None
 
 class NewConditionInput(BaseModel):
-    model_config = ConfigDict(extra="forbid")
+    model_config = ConfigDict(extra="ignore")
     conditionName: str = Field(min_length=1, max_length=255)
-    status: RecordStatusType = "active"
-    severity: Optional[str] = None
+    status: Optional[RecordStatusType] = "active"
+    severity: Optional[str] = "mild"
     onsetDate: Optional[date] = None
     resolvedDate: Optional[date] = None
     provider: Optional[str] = None
     notes: Optional[str] = None
 
 class NewMedicationInput(BaseModel):
-    model_config = ConfigDict(extra="forbid")
+    model_config = ConfigDict(extra="ignore")
     medicationName: str = Field(min_length=1, max_length=255)
     dosage: Optional[str] = None
     startDate: Optional[date] = None
     endDate: Optional[date] = None
-    status: RecordStatusType = "active"
+    status: Optional[RecordStatusType] = "active"
     provider: Optional[str] = None
     instructions: Optional[str] = None
 
 class NewVaccinationInput(BaseModel):
-    model_config = ConfigDict(extra="forbid")
+    model_config = ConfigDict(extra="ignore")
     vaccineName: str = Field(min_length=1, max_length=255)
     doseNumber: Optional[int] = 1
-    administeredDate: date
+    administeredDate: Optional[date] = None
     nextDueDate: Optional[date] = None
     batchNumber: Optional[str] = None
     provider: Optional[str] = None
     notes: Optional[str] = None
 
 class NewReportInput(BaseModel):
-    model_config = ConfigDict(extra="forbid")
+    model_config = ConfigDict(extra="ignore")
     reportName: str = Field(min_length=1, max_length=255)
-    reportType: Optional[str] = None
+    reportType: Optional[str] = "lab"
     reportDate: Optional[date] = None
     conclusion: Optional[str] = None
     provider: Optional[str] = None

@@ -8,7 +8,8 @@ import { KindTag } from '../components/Kind'
 import { ageAt, formatDate } from '../lib/format'
 import { button, emptyBox } from '../lib/ui'
 import { useHealthData } from '../store/healthData'
-import type { HealthEvent } from '../types'
+import ManualRecordModal from '../components/records/ManualRecordModal'
+import type { HealthEvent, Kind } from '../types'
 
 // The graph library is large, so it is only downloaded when the Graph tab is first opened.
 const HealthGraphFlow = lazy(() => import('../components/graph/HealthGraphFlow'))
@@ -19,6 +20,7 @@ export default function Timeline() {
   const { profile, events } = useHealthData()
   const [view, setView] = useState<View>('timeline')
   const [filter, setFilter] = useState<KindFilter>('all')
+  const [manualModalOpen, setManualModalOpen] = useState(false)
 
   const years = useMemo(() => {
     const groups = new Map<string, HealthEvent[]>()
@@ -32,7 +34,22 @@ export default function Timeline() {
 
   return (
     <>
-      <PageHeader title="Your timeline" subtitle="Everything on record, from birth to today." />
+      <ManualRecordModal
+        open={manualModalOpen}
+        initialKind={filter !== 'all' ? (filter as Kind) : 'vaccination'}
+        onClose={() => setManualModalOpen(false)}
+      />
+
+      <PageHeader title="Your timeline" subtitle="Everything on record, from birth to today.">
+        <button
+          type="button"
+          className={button('primary')}
+          onClick={() => setManualModalOpen(true)}
+        >
+          <Icon name="plus" size={17} />
+          Add record
+        </button>
+      </PageHeader>
 
       <div className="mb-6 flex flex-wrap items-center justify-between gap-x-4 gap-y-3">
         <div className="inline-flex rounded-full border border-line bg-white p-1" role="group" aria-label="View">

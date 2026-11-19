@@ -8,6 +8,10 @@ import type {
   HealthEvent,
   Kind,
   NewAllergyInput,
+  NewConditionInput,
+  NewMedicationInput,
+  NewVaccinationInput,
+  NewReportInput,
   PatientProfile,
   PermittedPersonalDetailsUpdate,
   PrescriptionRecord,
@@ -37,7 +41,11 @@ export interface GiveAccessInput {
 export interface HealthActions {
   completeProfile: (payload: ProfileCompletionPayload) => Promise<void> | void
   updatePermittedDetails: (update: PermittedPersonalDetailsUpdate) => Promise<void> | void
-  addAllergy: (input: NewAllergyInput) => void
+  addAllergy: (input: NewAllergyInput) => Promise<HealthEvent | void> | void
+  addVaccination: (input: NewVaccinationInput) => Promise<HealthEvent>
+  addCondition: (input: NewConditionInput) => Promise<HealthEvent>
+  addMedication: (input: NewMedicationInput) => Promise<HealthEvent>
+  addReport: (input: NewReportInput) => Promise<HealthEvent>
   addPrescription: (rx: Omit<PrescriptionRecord, 'id'>) => void
   removePrescription: (id: string) => void
   toggleSample: () => void

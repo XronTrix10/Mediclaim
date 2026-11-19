@@ -29,6 +29,24 @@ export interface HealthEvent {
   prescriptionId?: string
   fileType?: 'pdf' | 'image'
   fileName?: string
+  // Specific fields for other record kinds
+  vaccineName?: string
+  doseNumber?: number
+  batchNumber?: string
+  administeredDate?: string
+  nextDueDate?: string
+  conditionName?: string
+  onsetDate?: string
+  resolvedDate?: string
+  medicationName?: string
+  dosage?: string
+  instructions?: string
+  startDate?: string
+  endDate?: string
+  reportName?: string
+  reportType?: string
+  reportDate?: string
+  conclusion?: string
 }
 
 export interface NewAllergyInput {
@@ -39,6 +57,44 @@ export interface NewAllergyInput {
   reaction: string
   provider: string
   notes?: string
+}
+
+export interface NewConditionInput {
+  conditionName: string
+  status?: RecordStatus
+  severity?: string
+  onsetDate?: string
+  resolvedDate?: string
+  provider?: string
+  notes?: string
+}
+
+export interface NewMedicationInput {
+  medicationName: string
+  dosage?: string
+  startDate?: string
+  endDate?: string
+  status?: RecordStatus
+  provider?: string
+  instructions?: string
+}
+
+export interface NewVaccinationInput {
+  vaccineName: string
+  doseNumber?: number
+  administeredDate?: string
+  nextDueDate?: string
+  batchNumber?: string
+  provider?: string
+  notes?: string
+}
+
+export interface NewReportInput {
+  reportName: string
+  reportType?: string
+  reportDate?: string
+  conclusion?: string
+  provider?: string
 }
 
 export interface PrescriptionRecord {

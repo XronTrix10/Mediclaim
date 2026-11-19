@@ -151,6 +151,29 @@ def _record_to_view_model(r: Dict[str, Any], include_fhir: bool = False) -> Dict
     elif kind == "medication":
         item["dosage"] = r.get("dosage") or ""
         item["instructions"] = r.get("instructions") or ""
+    elif kind == "vaccination":
+        item["vaccineName"] = r.get("vaccine_name") or title
+        item["doseNumber"] = r.get("dose_number") or 1
+        item["batchNumber"] = r.get("batch_number")
+        if r.get("administered_date"):
+            item["date"] = _format_date(r.get("administered_date"))
+            item["administeredDate"] = _format_date(r.get("administered_date"))
+        item["notes"] = r.get("notes") or r.get("description")
+    elif kind == "condition":
+        item["conditionName"] = r.get("condition_name") or title
+        item["severity"] = r.get("severity") or "mild"
+        if r.get("onset_date"):
+            item["date"] = _format_date(r.get("onset_date"))
+            item["onsetDate"] = _format_date(r.get("onset_date"))
+        item["resolvedDate"] = _format_date(r.get("resolved_date"))
+        item["notes"] = r.get("condition_notes") or r.get("description")
+    elif kind == "report":
+        item["reportName"] = r.get("report_name") or title
+        item["reportType"] = r.get("report_type") or "lab"
+        item["conclusion"] = r.get("conclusion")
+        if r.get("report_date"):
+            item["date"] = _format_date(r.get("report_date"))
+            item["reportDate"] = _format_date(r.get("report_date"))
 
     if include_fhir:
         item["fhirResource"] = _build_fhir_resource(r, kind)
@@ -309,10 +332,12 @@ def create_allergy(patient_profile_id: str, user_id: str, payload) -> Dict[str, 
             payload.severity, rec_date, payload.notes, payload.category, payload.criticality
         ))
 
+    detail_val = payload.notes or payload.reaction or f"Allergy to {payload.allergen}"
     return {
         "id": f"rec_{rec_uuid}",
         "kind": "allergy",
         "title": payload.allergen,
+        "detail": detail_val,
         "category": payload.category,
         "severity": payload.severity,
         "criticality": payload.criticality,
@@ -320,7 +345,7 @@ def create_allergy(patient_profile_id: str, user_id: str, payload) -> Dict[str, 
         "status": "active",
         "source": "self_reported",
         "date": _format_date(rec_date),
-        "provider": payload.provider,
+        "provider": payload.provider or "Self-reported",
         "notes": payload.notes,
         "fhirId": f"AllergyIntolerance/ai-{str(rec_uuid)[:8]}"
     }
@@ -332,6 +357,10 @@ def create_condition(patient_profile_id: str, user_id: str, payload) -> Dict[str
     rec_uuid = uuid.uuid4()
     public_id = _new_public_id("rec")
     onset = payload.onsetDate or datetime.now(timezone.utc).date()
+    status_val = payload.status or "active"
+    severity_val = payload.severity or "mild"
+    provider_val = payload.provider or "Self-reported"
+    detail_val = payload.notes or f"{severity_val.capitalize()} {payload.conditionName}"
 
     with get_db() as conn:
         conn.execute("""
@@ -342,12 +371,12 @@ def create_condition(patient_profile_id: str, user_id: str, payload) -> Dict[str
             ) VALUES (
                 %s, %s, %s, %s, 'condition', %s,
                 %s, %s, %s, now(), now(),
-                'practitioner', %s, 'Condition', %s
+                'self_reported', %s, 'Condition', %s
             )
         """, (
             str(rec_uuid), public_id, raw_patient_id, raw_user_id, payload.conditionName,
-            payload.status, payload.notes or payload.conditionName, onset,
-            payload.provider or "Practitioner", f"cond-{str(rec_uuid)[:8]}"
+            status_val, detail_val, onset,
+            provider_val, f"cond-{str(rec_uuid)[:8]}"
         ))
 
         conn.execute("""
@@ -359,17 +388,23 @@ def create_condition(patient_profile_id: str, user_id: str, payload) -> Dict[str
                 %s, %s, %s, %s, now()
             )
         """, (
-            raw_patient_id, str(rec_uuid), payload.conditionName, payload.severity,
-            payload.status, onset, payload.resolvedDate, payload.notes
+            raw_patient_id, str(rec_uuid), payload.conditionName, severity_val,
+            status_val, onset, payload.resolvedDate, payload.notes
         ))
 
     return {
         "id": f"rec_{rec_uuid}",
         "kind": "condition",
         "title": payload.conditionName,
-        "status": payload.status,
+        "detail": detail_val,
+        "status": status_val,
+        "severity": severity_val,
+        "source": "self_reported",
         "date": _format_date(onset),
-        "provider": payload.provider or "Practitioner",
+        "onsetDate": _format_date(onset),
+        "resolvedDate": _format_date(payload.resolvedDate),
+        "provider": provider_val,
+        "notes": payload.notes,
         "fhirId": f"Condition/cond-{str(rec_uuid)[:8]}"
     }
 
@@ -380,6 +415,14 @@ def create_medication(patient_profile_id: str, user_id: str, payload) -> Dict[st
     rec_uuid = uuid.uuid4()
     public_id = _new_public_id("rec")
     start = payload.startDate or datetime.now(timezone.utc).date()
+    status_val = payload.status or "active"
+    provider_val = payload.provider or "Self-reported"
+    detail_parts = []
+    if payload.dosage:
+        detail_parts.append(payload.dosage)
+    if payload.instructions:
+        detail_parts.append(payload.instructions)
+    detail_val = ". ".join(detail_parts) if detail_parts else payload.medicationName
 
     with get_db() as conn:
         conn.execute("""
@@ -390,12 +433,12 @@ def create_medication(patient_profile_id: str, user_id: str, payload) -> Dict[st
             ) VALUES (
                 %s, %s, %s, %s, 'medication', %s,
                 %s, %s, %s, now(), now(),
-                'practitioner', %s, 'MedicationStatement', %s
+                'self_reported', %s, 'MedicationStatement', %s
             )
         """, (
             str(rec_uuid), public_id, raw_patient_id, raw_user_id, payload.medicationName,
-            payload.status, payload.instructions or payload.dosage, start,
-            payload.provider or "Practitioner", f"med-{str(rec_uuid)[:8]}"
+            status_val, detail_val, start,
+            provider_val, f"med-{str(rec_uuid)[:8]}"
         ))
 
         conn.execute("""
@@ -408,17 +451,22 @@ def create_medication(patient_profile_id: str, user_id: str, payload) -> Dict[st
             )
         """, (
             raw_patient_id, payload.medicationName, payload.dosage, start,
-            payload.endDate, payload.status, payload.instructions
+            payload.endDate, status_val, payload.instructions
         ))
 
     return {
         "id": f"rec_{rec_uuid}",
         "kind": "medication",
         "title": payload.medicationName,
+        "detail": detail_val,
         "dosage": payload.dosage,
-        "status": payload.status,
+        "instructions": payload.instructions,
+        "status": status_val,
+        "source": "self_reported",
         "date": _format_date(start),
-        "provider": payload.provider or "Practitioner",
+        "startDate": _format_date(start),
+        "endDate": _format_date(payload.endDate),
+        "provider": provider_val,
         "fhirId": f"MedicationStatement/med-{str(rec_uuid)[:8]}"
     }
 
@@ -428,6 +476,10 @@ def create_vaccination(patient_profile_id: str, user_id: str, payload) -> Dict[s
     raw_user_id = user_id.replace("usr-", "").replace("usr_", "")
     rec_uuid = uuid.uuid4()
     public_id = _new_public_id("rec")
+    admin_date = payload.administeredDate or datetime.now(timezone.utc).date()
+    dose_val = payload.doseNumber or 1
+    provider_val = payload.provider or "Self-reported"
+    detail_val = payload.notes or f"Dose {dose_val}"
 
     with get_db() as conn:
         conn.execute("""
@@ -438,12 +490,12 @@ def create_vaccination(patient_profile_id: str, user_id: str, payload) -> Dict[s
             ) VALUES (
                 %s, %s, %s, %s, 'vaccination', %s,
                 'active', %s, %s, now(), now(),
-                'practitioner', %s, 'Immunization', %s
+                'self_reported', %s, 'Immunization', %s
             )
         """, (
             str(rec_uuid), public_id, raw_patient_id, raw_user_id, payload.vaccineName,
-            payload.notes or f"Dose {payload.doseNumber}", payload.administeredDate,
-            payload.provider or "Practitioner", f"imm-{str(rec_uuid)[:8]}"
+            detail_val, admin_date,
+            provider_val, f"imm-{str(rec_uuid)[:8]}"
         ))
 
         conn.execute("""
@@ -455,16 +507,24 @@ def create_vaccination(patient_profile_id: str, user_id: str, payload) -> Dict[s
                 %s, %s, %s, %s, now()
             )
         """, (
-            raw_patient_id, str(rec_uuid), payload.vaccineName, payload.doseNumber,
-            payload.administeredDate, payload.nextDueDate, payload.batchNumber, payload.notes
+            raw_patient_id, str(rec_uuid), payload.vaccineName, dose_val,
+            admin_date, payload.nextDueDate, payload.batchNumber, payload.notes
         ))
 
     return {
         "id": f"rec_{rec_uuid}",
         "kind": "vaccination",
         "title": payload.vaccineName,
-        "date": _format_date(payload.administeredDate),
-        "provider": payload.provider or "Practitioner",
+        "detail": detail_val,
+        "status": "completed",
+        "source": "self_reported",
+        "date": _format_date(admin_date),
+        "administeredDate": _format_date(admin_date),
+        "doseNumber": dose_val,
+        "batchNumber": payload.batchNumber,
+        "nextDueDate": _format_date(payload.nextDueDate),
+        "provider": provider_val,
+        "notes": payload.notes,
         "fhirId": f"Immunization/imm-{str(rec_uuid)[:8]}"
     }
 
@@ -477,6 +537,9 @@ def create_report(patient_profile_id: str, user_id: str, payload) -> Dict[str, A
     public_id = _new_public_id("rec")
     diag_public_id = _new_public_id("doc")
     rep_date = payload.reportDate or datetime.now(timezone.utc).date()
+    rep_type = payload.reportType or "lab"
+    provider_val = payload.provider or "Diagnostic Centre"
+    detail_val = payload.conclusion or f"{rep_type.capitalize()} test report"
 
     with get_db() as conn:
         conn.execute("""
@@ -487,12 +550,12 @@ def create_report(patient_profile_id: str, user_id: str, payload) -> Dict[str, A
             ) VALUES (
                 %s, %s, %s, %s, 'report', %s,
                 'active', %s, %s, now(), now(),
-                'practitioner', %s, 'DiagnosticReport', %s
+                'self_reported', %s, 'DiagnosticReport', %s
             )
         """, (
             str(rec_uuid), public_id, raw_patient_id, raw_user_id, payload.reportName,
-            payload.conclusion or payload.reportName, rep_date,
-            payload.provider or "Diagnostic Centre", f"diag-{str(rec_uuid)[:8]}"
+            detail_val, rep_date,
+            provider_val, f"diag-{str(rec_uuid)[:8]}"
         ))
 
         conn.execute("""
@@ -505,15 +568,21 @@ def create_report(patient_profile_id: str, user_id: str, payload) -> Dict[str, A
             )
         """, (
             str(diag_uuid), diag_public_id, raw_patient_id, payload.reportName,
-            payload.reportType or "lab", rep_date, payload.conclusion
+            rep_type, rep_date, payload.conclusion
         ))
 
     return {
         "id": f"rec_{rec_uuid}",
         "kind": "report",
         "title": payload.reportName,
+        "detail": detail_val,
+        "status": "final",
+        "source": "self_reported",
         "date": _format_date(rep_date),
-        "provider": payload.provider or "Diagnostic Centre",
+        "reportDate": _format_date(rep_date),
+        "reportType": rep_type,
+        "conclusion": payload.conclusion,
+        "provider": provider_val,
         "fhirId": f"DiagnosticReport/diag-{str(rec_uuid)[:8]}"
     }
 

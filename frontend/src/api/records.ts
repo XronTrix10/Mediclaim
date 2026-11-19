@@ -1,5 +1,15 @@
 import { api } from './client'
-import type { HealthEvent, NewAllergyInput, PrescriptionRecord, Kind, RecordStatus } from '../types'
+import type {
+  HealthEvent,
+  NewAllergyInput,
+  NewConditionInput,
+  NewMedicationInput,
+  NewVaccinationInput,
+  NewReportInput,
+  PrescriptionRecord,
+  Kind,
+  RecordStatus,
+} from '../types'
 
 export interface RecordFilters {
   kind?: Kind
@@ -35,54 +45,28 @@ export const recordsApi = {
     return res.data
   },
 
-  async addCondition(input: {
-    conditionName: string
-    status?: RecordStatus
-    severity?: string
-    onsetDate?: string
-    resolvedDate?: string
-    provider?: string
-    notes?: string
-  }): Promise<HealthEvent> {
+  async addCondition(input: NewConditionInput): Promise<HealthEvent> {
     const res = await api.post<{ status: string; data: HealthEvent }>('/records/conditions', input)
     return res.data
   },
 
-  async addMedication(input: {
-    medicationName: string
-    dosage?: string
-    startDate?: string
-    endDate?: string
-    status?: RecordStatus
-    provider?: string
-    instructions?: string
-  }): Promise<HealthEvent> {
+  async addMedication(input: NewMedicationInput): Promise<HealthEvent> {
     const res = await api.post<{ status: string; data: HealthEvent }>('/records/medications', input)
     return res.data
   },
 
-  async addVaccination(input: {
-    vaccineName: string
-    doseNumber?: number
-    administeredDate: string
-    nextDueDate?: string
-    batchNumber?: string
-    provider?: string
-    notes?: string
-  }): Promise<HealthEvent> {
+  async addVaccination(input: NewVaccinationInput): Promise<HealthEvent> {
     const res = await api.post<{ status: string; data: HealthEvent }>('/records/vaccinations', input)
     return res.data
   },
 
-  async addDiagnosticReport(input: {
-    reportName: string
-    reportType?: string
-    reportDate?: string
-    conclusion?: string
-    provider?: string
-  }): Promise<HealthEvent> {
-    const res = await api.post<{ status: string; data: HealthEvent }>('/records/diagnostic-reports', input)
+  async addDiagnosticReport(input: NewReportInput): Promise<HealthEvent> {
+    const res = await api.post<{ status: string; data: HealthEvent }>('/records/reports', input)
     return res.data
+  },
+
+  async addReport(input: NewReportInput): Promise<HealthEvent> {
+    return this.addDiagnosticReport(input)
   },
 
   async getPrescriptions(): Promise<PrescriptionRecord[]> {

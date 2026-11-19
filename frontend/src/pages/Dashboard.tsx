@@ -1,4 +1,4 @@
-import { useRef } from 'react'
+import { useRef, useState } from 'react'
 import { Link } from 'react-router-dom'
 import PageHeader from '../components/PageHeader'
 import Icon from '../components/Icon'
@@ -6,6 +6,8 @@ import type { IconName } from '../components/Icon'
 import { button } from '../lib/ui'
 import { downloadHistory } from '../lib/exportHistory'
 import { useHealthData } from '../store/healthData'
+import ManualRecordModal from '../components/records/ManualRecordModal'
+import type { Kind } from '../types'
 import {
   ActiveAccessCard,
   AllergiesSection,
@@ -28,7 +30,14 @@ export default function Dashboard() {
   const { profile, events, prescriptions, grants, sampleLoaded, actions } = useHealthData()
   const uploader = useRef<UploaderHandle>(null)
   const openUpload = () => uploader.current?.openPicker()
+  const [manualModalOpen, setManualModalOpen] = useState(false)
+  const [manualInitialKind, setManualInitialKind] = useState<Kind>('vaccination')
   const allergies = events.filter((e) => e.kind === 'allergy')
+
+  const openManualEntry = (kind: Kind = 'vaccination') => {
+    setManualInitialKind(kind)
+    setManualModalOpen(true)
+  }
 
   return (
     <>
@@ -36,11 +45,20 @@ export default function Dashboard() {
         <ProfileCompletionModal initialName={profile.firstName} onComplete={actions.completeProfile} />
       )}
       <PrescriptionUploader ref={uploader} />
+      <ManualRecordModal
+        open={manualModalOpen}
+        initialKind={manualInitialKind}
+        onClose={() => setManualModalOpen(false)}
+      />
 
       <PageHeader title={`Welcome back, ${profile.firstName}`} subtitle="Your lifelong health record, in HL7 FHIR format.">
         <button type="button" className={button('ghost')} onClick={() => downloadHistory(profile, events)}>
           <Icon name="download" size={17} />
           Download history
+        </button>
+        <button type="button" className={button('soft')} onClick={() => openManualEntry('vaccination')}>
+          <Icon name="plus" size={17} />
+          Add record
         </button>
         <button type="button" className={button('primary')} onClick={openUpload}>
           <Icon name="upload" size={17} />

@@ -194,6 +194,7 @@ def record_vaccination(
 
 
 @router.post("/reports", status_code=status.HTTP_201_CREATED)
+@router.post("/diagnostic-reports", status_code=status.HTTP_201_CREATED)
 def record_report(
     payload: NewReportInput,
     current_user: AuthenticatedUser = Depends(get_current_user),
