@@ -78,11 +78,11 @@ export default function HospitalDashboard() {
       <div className={card}>
         <h2 className="mb-4 text-[1.1rem] font-semibold text-ink">Quick Actions</h2>
         <div className="grid gap-3 sm:grid-cols-2">
-          <Link to="/app/patients" className={`${button('soft', 'md')} justify-start gap-3 rounded-2xl px-4 py-3`}>
+          <Link to="/app/hospital/patients" className={`${button('soft', 'md')} justify-start gap-3 rounded-2xl px-4 py-3`}>
             <Icon name="users" size={18} />
             View All Patients
           </Link>
-          <Link to="/app/practitioners" className={`${button('ghost', 'md')} justify-start gap-3 rounded-2xl px-4 py-3`}>
+          <Link to="/app/hospital/practitioners" className={`${button('ghost', 'md')} justify-start gap-3 rounded-2xl px-4 py-3`}>
             <Icon name="stethoscope" size={18} />
             Manage Practitioners
           </Link>
@@ -94,7 +94,7 @@ export default function HospitalDashboard() {
         <div className={card}>
           <div className="mb-4 flex items-center justify-between">
             <h2 className="text-[1.1rem] font-semibold text-ink">Recent Patients</h2>
-            <Link to="/app/patients" className="text-sm font-semibold text-brand hover:underline">View all</Link>
+            <Link to="/app/hospital/patients" className="text-sm font-semibold text-brand hover:underline">View all</Link>
           </div>
           {loading ? (
             <div className="space-y-3">{[1,2,3].map((i) => <div key={i} className="h-14 rounded-2xl bg-mist animate-pulse" />)}</div>
@@ -122,7 +122,7 @@ export default function HospitalDashboard() {
         <div className={card}>
           <div className="mb-4 flex items-center justify-between">
             <h2 className="text-[1.1rem] font-semibold text-ink">Practitioners</h2>
-            <Link to="/app/practitioners" className="text-sm font-semibold text-brand hover:underline">View all</Link>
+            <Link to="/app/hospital/practitioners" className="text-sm font-semibold text-brand hover:underline">View all</Link>
           </div>
           {loading ? (
             <div className="space-y-3">{[1,2,3].map((i) => <div key={i} className="h-14 rounded-2xl bg-mist animate-pulse" />)}</div>

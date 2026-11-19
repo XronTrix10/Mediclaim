@@ -3,7 +3,7 @@ import { useParams, Link } from 'react-router-dom'
 import Icon from '../../components/Icon'
 import PageHeader from '../../components/PageHeader'
 import { card, button, chip, emptyBox } from '../../lib/ui'
-import { getAuthorizedRecords, type DoctorPatientSummary } from '../../api/doctor'
+import { getAuthorizedRecords } from '../../api/doctor'
 import type { HealthEvent } from '../../types'
 import AddPatientRecordModal from '../../components/doctor/AddPatientRecordModal'
 
@@ -91,7 +91,7 @@ export default function DoctorPatientDetail() {
   return (
     <div className="grid gap-7">
       <div className="flex items-center gap-2 text-sm text-ink-soft">
-        <Link to="/app/patients" className="hover:text-brand">My Patients</Link>
+        <Link to="/app/doctor/patients" className="hover:text-brand">My Patients</Link>
         <Icon name="chevron-right" size={14} />
         <span className="text-ink">{mediclaimId}</span>
       </div>
@@ -106,7 +106,7 @@ export default function DoctorPatientDetail() {
           <Icon name="lock" size={32} className="mx-auto" />
           <p className="mt-3 font-medium">{error}</p>
           <p className="mt-1 text-sm text-ink-soft">Request access from the patient first.</p>
-          <Link to="/app/request-access" className={`${button('soft', 'sm')} mt-4`}>Request Access</Link>
+          <Link to="/app/doctor/request-access" className={`${button('soft', 'sm')} mt-4`}>Request Access</Link>
         </div>
       ) : data ? (
         <>
@@ -114,13 +114,12 @@ export default function DoctorPatientDetail() {
           <PageHeader
             title={data.patient?.fullName ?? mediclaimId}
             subtitle={`Mediclaim ID: ${mediclaimId} · Access expires ${formatDate(data.expiresAt)}`}
-            actions={
-              <button onClick={() => openAdd('all')} className={`${button('primary', 'md')} gap-2`}>
-                <Icon name="plus" size={16} />
-                Add record
-              </button>
-            }
-          />
+          >
+            <button onClick={() => openAdd('all')} className={`${button('primary', 'md')} gap-2`}>
+              <Icon name="plus" size={16} />
+              Add record
+            </button>
+          </PageHeader>
 
           <div className={card}>
             <div className="grid grid-cols-2 gap-4 sm:grid-cols-4 text-sm">

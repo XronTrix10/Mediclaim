@@ -26,11 +26,6 @@ const TABS: { kind: RecordKind; label: string }[] = [
   { kind: 'report', label: 'Report' },
 ]
 
-const SPECIALIZATIONS = [
-  'General Physician', 'Cardiologist', 'Pulmonologist', 'Dermatologist',
-  'Neurologist', 'Orthopedic', 'Pediatrician', 'Gynecologist', 'Oncologist', 'Other',
-]
-
 export default function AddPatientRecordModal({ mediclaimId, initialKind = 'vaccination', onClose, onAdded }: Props) {
   const [activeKind, setActiveKind] = useState<RecordKind>(initialKind)
   const [loading, setLoading] = useState(false)

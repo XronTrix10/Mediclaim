@@ -7,12 +7,14 @@ from app.schemas.doctor import (
     DoctorPatientsListResponse, DoctorAccessRequestInput, DoctorRequestsListResponse,
     DoctorEncounterInput, DoctorConditionInput, DoctorPrescriptionInput,
     DoctorReportInput, DoctorVaccinationInput,
+    DoctorRegisterInput, DoctorRequestOtpInput, DoctorVerifyOtpInput, DoctorLoginInput,
 )
 from app.services.consent_service import doctor_access_patient, create_access_request
 from app.services.doctor_service import (
     list_doctor_patients, list_doctor_requests,
     record_encounter, record_condition, record_prescription,
     record_report, record_vaccination,
+    register_doctor, doctor_request_otp, doctor_verify_otp, doctor_login,
 )
 from app.security import get_current_user, AuthenticatedUser
 from app.exceptions import APIProblemException
@@ -29,13 +31,57 @@ def _make_meta(total: Optional[int] = None) -> EnvelopeMeta:
 
 
 def _require_doctor(user: AuthenticatedUser) -> None:
-    if not user.has_role("doctor", "practitioner", "admin"):
+    if not user.has_role("doctor", "practitioner", "admin", "hospital_admin", "organization"):
         raise APIProblemException(
             status_code=status.HTTP_403_FORBIDDEN,
             title="Access Denied",
-            detail="Practitioner or Administrator privileges required.",
+            detail="Practitioner, Hospital, or Administrator privileges required.",
             code="UNAUTHORIZED_ROLE",
         )
+
+
+@router.post("/register", status_code=status.HTTP_201_CREATED)
+def register_practitioner(payload: DoctorRegisterInput):
+    data = register_doctor(payload)
+    return {
+        "status": "success",
+        "message": "Practitioner registration submitted. Pending administrator verification.",
+        "data": data,
+        "meta": _make_meta(),
+    }
+
+
+@router.post("/login/request-otp", status_code=status.HTTP_200_OK)
+def doctor_request_otp_route(payload: DoctorRequestOtpInput):
+    data = doctor_request_otp(payload)
+    return {
+        "status": "success",
+        "message": "Verification code sent.",
+        "data": data,
+        "meta": _make_meta(),
+    }
+
+
+@router.post("/login/verify-otp", status_code=status.HTTP_200_OK)
+def doctor_verify_otp_route(payload: DoctorVerifyOtpInput):
+    data = doctor_verify_otp(payload)
+    return {
+        "status": "success",
+        "message": "Practitioner authenticated successfully.",
+        "data": data,
+        "meta": _make_meta(),
+    }
+
+
+@router.post("/login", status_code=status.HTTP_200_OK)
+def doctor_login_route(payload: DoctorLoginInput):
+    data = doctor_login(payload)
+    return {
+        "status": "success",
+        "message": "Practitioner authenticated successfully.",
+        "data": data,
+        "meta": _make_meta(),
+    }
 
 
 @router.get("/patients", response_model=DoctorPatientsListResponse, status_code=status.HTTP_200_OK)

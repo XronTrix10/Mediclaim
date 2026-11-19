@@ -50,13 +50,12 @@ export default function DoctorPatients() {
       <PageHeader
         title="My Patients"
         subtitle="Patients who have granted you access to their records."
-        actions={
-          <Link to="/app/request-access" className={`${button('primary', 'md')} gap-2`}>
-            <Icon name="plus" size={16} />
-            Request access
-          </Link>
-        }
-      />
+      >
+        <Link to="/app/doctor/request-access" className={`${button('primary', 'md')} gap-2`}>
+          <Icon name="plus" size={16} />
+          Request access
+        </Link>
+      </PageHeader>
 
       {/* Search */}
       <div className="relative">
@@ -91,7 +90,7 @@ export default function DoctorPatients() {
             {search ? 'Try a different name or ID.' : 'Request access to a patient to get started.'}
           </p>
           {!search && (
-            <Link to="/app/request-access" className={`${button('soft', 'sm')} mt-4`}>
+            <Link to="/app/doctor/request-access" className={`${button('soft', 'sm')} mt-4`}>
               Request Patient Access
             </Link>
           )}
@@ -110,7 +109,7 @@ export default function DoctorPatients() {
                     <p className="text-xs text-ink-faint">ID {p.mediclaimId}</p>
                   </div>
                 </div>
-                <Link to={`/app/patients/${p.mediclaimId}`} className={`${button('soft', 'sm')} shrink-0`}>
+                <Link to={`/app/doctor/patients/${p.mediclaimId}`} className={`${button('soft', 'sm')} shrink-0`}>
                   View
                 </Link>
               </div>

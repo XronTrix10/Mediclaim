@@ -1,8 +1,7 @@
 import { useEffect, useState } from 'react'
-import { Link } from 'react-router-dom'
 import Icon from '../../components/Icon'
 import PageHeader from '../../components/PageHeader'
-import { card, button, input, emptyBox } from '../../lib/ui'
+import { card, input, emptyBox } from '../../lib/ui'
 import { getAuthorizedPatients, type DoctorPatientSummary } from '../../api/doctor'
 
 function formatDate(iso?: string) {

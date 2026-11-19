@@ -1,8 +1,7 @@
 import { useEffect, useState } from 'react'
 import Icon from '../../components/Icon'
 import PageHeader from '../../components/PageHeader'
-import Field from '../../components/Field'
-import { card, button, input, emptyBox, avatar } from '../../lib/ui'
+import { card, input, emptyBox, avatar } from '../../lib/ui'
 import { getPractitioners, type PractitionerSummary } from '../../api/hospital'
 
 function formatDate(iso?: string) {

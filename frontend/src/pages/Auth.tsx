@@ -327,7 +327,7 @@ const SPECIALIZATIONS = [
   'Psychiatrist', 'Ophthalmologist', 'ENT Specialist', 'Other',
 ]
 
-function DoctorRegisterForm({ onSwitch, onSuccess }: FormProps) {
+function DoctorRegisterForm({ onSwitch }: FormProps) {
   const [fullName, setFullName] = useState('')
   const [dateOfBirth, setDateOfBirth] = useState('')
   const [phone, setPhone] = useState('')

@@ -30,19 +30,6 @@ import HospitalDashboard from './pages/hospital/HospitalDashboard'
 import HospitalPatients from './pages/hospital/HospitalPatients'
 import HospitalPractitioners from './pages/hospital/HospitalPractitioners'
 
-import { authApi } from './api/auth'
-
-/** Guard that sends doctor and hospital users to their role-specific layout. */
-function RoleRouter() {
-  const user = authApi.getCurrentUser()
-  if (!user) return <Navigate to="/auth" replace />
-  if (user.role === 'admin') return <Navigate to="/admin" replace />
-  if (user.role === 'practitioner') return <Navigate to="/app/doctor" replace />
-  if (user.role === 'hospital_admin' || user.role === 'organization') return <Navigate to="/app/hospital" replace />
-  // patient — handled by AppLayout / patient routes below
-  return null
-}
-
 export default function App() {
   return (
     <Routes>

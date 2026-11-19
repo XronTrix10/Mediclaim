@@ -73,16 +73,20 @@ def generate_mediclaim_id() -> str:
     return f"{base}{check_digit}"
 
 
-def format_mediclaim_id(val: str) -> str:
+def format_mediclaim_id(val: Optional[str]) -> str:
     """Formats 12-digit string into 'XXXX XXXX XXXX'."""
+    if not val:
+        return ""
     clean = normalize_mediclaim_id(val)
     if len(clean) == 12:
         return f"{clean[:4]} {clean[4:8]} {clean[8:]}"
-    return val
+    return str(val)
 
 
-def normalize_mediclaim_id(value: str) -> str:
-    return "".join(ch for ch in value if ch.isdigit())
+def normalize_mediclaim_id(value: Optional[str]) -> str:
+    if not value:
+        return ""
+    return "".join(ch for ch in str(value) if ch.isdigit())
 
 
 # --- Password & OTP ---

@@ -50,6 +50,16 @@ export default function AppLayout() {
     return <Navigate to="/admin" replace />
   }
 
+  // Doctor / Practitioner → redirect to doctor portal
+  if (user.role === 'practitioner' || (user as any).role === 'doctor') {
+    return <Navigate to="/app/doctor" replace />
+  }
+
+  // Hospital / Organization → redirect to hospital portal
+  if (user.role === 'hospital_admin' || user.role === 'organization') {
+    return <Navigate to="/app/hospital" replace />
+  }
+
   // Patient (default)
   return <PatientLayout />
 }

@@ -101,15 +101,15 @@ export default function DoctorDashboard() {
       <div className={card}>
         <h2 className="mb-4 text-[1.1rem] font-semibold text-ink">Quick Actions</h2>
         <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-3">
-          <Link to="/app/request-access" className={`${button('soft', 'md')} justify-start gap-3 rounded-2xl px-4 py-3`}>
+          <Link to="/app/doctor/request-access" className={`${button('soft', 'md')} justify-start gap-3 rounded-2xl px-4 py-3`}>
             <Icon name="search" size={18} />
             Search & Request Patient Access
           </Link>
-          <Link to="/app/patients" className={`${button('ghost', 'md')} justify-start gap-3 rounded-2xl px-4 py-3`}>
+          <Link to="/app/doctor/patients" className={`${button('ghost', 'md')} justify-start gap-3 rounded-2xl px-4 py-3`}>
             <Icon name="users" size={18} />
             View My Patients
           </Link>
-          <Link to="/app/access-history" className={`${button('ghost', 'md')} justify-start gap-3 rounded-2xl px-4 py-3`}>
+          <Link to="/app/doctor/access-history" className={`${button('ghost', 'md')} justify-start gap-3 rounded-2xl px-4 py-3`}>
             <Icon name="clock" size={18} />
             Access History
           </Link>
@@ -121,7 +121,7 @@ export default function DoctorDashboard() {
         <div className={card}>
           <div className="mb-4 flex items-center justify-between">
             <h2 className="text-[1.1rem] font-semibold text-ink">Recent Patients</h2>
-            <Link to="/app/patients" className="text-sm font-semibold text-brand hover:underline">View all</Link>
+            <Link to="/app/doctor/patients" className="text-sm font-semibold text-brand hover:underline">View all</Link>
           </div>
           {loading ? (
             <div className="space-y-3">
@@ -131,7 +131,7 @@ export default function DoctorDashboard() {
             <div className="rounded-[18px] border-2 border-dashed border-line-strong px-5 py-8 text-center">
               <Icon name="users" size={28} className="mx-auto text-ink-faint" />
               <p className="mt-2 text-sm text-ink-soft">No patients yet. Request access to get started.</p>
-              <Link to="/app/request-access" className={`${button('soft', 'sm')} mt-3`}>Request Access</Link>
+              <Link to="/app/doctor/request-access" className={`${button('soft', 'sm')} mt-3`}>Request Access</Link>
             </div>
           ) : (
             <ul className="divide-y divide-line">
@@ -143,7 +143,7 @@ export default function DoctorDashboard() {
                   </div>
                   <div className="flex items-center gap-2 shrink-0">
                     <span className="text-xs text-ink-faint">Expires {formatDate(p.expiresAt)}</span>
-                    <Link to={`/app/patients/${p.mediclaimId}`} className={`${button('soft', 'sm')}`}>View</Link>
+                    <Link to={`/app/doctor/patients/${p.mediclaimId}`} className={`${button('soft', 'sm')}`}>View</Link>
                   </div>
                 </li>
               ))}
@@ -155,7 +155,7 @@ export default function DoctorDashboard() {
         <div className={card}>
           <div className="mb-4 flex items-center justify-between">
             <h2 className="text-[1.1rem] font-semibold text-ink">Recent Access Requests</h2>
-            <Link to="/app/access-history" className="text-sm font-semibold text-brand hover:underline">View all</Link>
+            <Link to="/app/doctor/access-history" className="text-sm font-semibold text-brand hover:underline">View all</Link>
           </div>
           {loading ? (
             <div className="space-y-3">

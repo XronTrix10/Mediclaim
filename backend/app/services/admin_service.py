@@ -43,7 +43,7 @@ def list_pending_verifications(
     with get_db() as conn:
         base_sql = """
             FROM users u
-            JOIN user_roles ur ON ur.user_id = u.id AND ur.role = 'patient'
+            JOIN user_roles ur ON ur.user_id = u.id
             LEFT JOIN patient_profiles p ON p.user_id = u.id
             WHERE u.admin_verified = false AND u.is_active = true
         """

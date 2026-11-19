@@ -2,10 +2,27 @@ from typing import Any, Dict, List, Literal, Optional
 from pydantic import BaseModel, Field, ConfigDict
 from app.schemas.auth import EnvelopeMeta
 
-class OrganizationCreateInput(BaseModel):
-    model_config = ConfigDict(extra="forbid")
+class HospitalRegisterInput(BaseModel):
+    model_config = ConfigDict(extra="ignore")
     name: str = Field(min_length=2, max_length=255)
-    organizationType: Literal["hospital", "clinic", "pharmacy", "diagnostic_lab"]
+    registrationNumber: str = Field(min_length=2, max_length=100)
+    type: str = Field(default="hospital")
+    address: Optional[str] = None
+    phone: str = Field(min_length=8, max_length=20)
+    email: str = Field(min_length=5, max_length=255)
+    password: str = Field(min_length=8)
+
+class HospitalLoginInput(BaseModel):
+    model_config = ConfigDict(extra="ignore")
+    email: Optional[str] = None
+    phone: Optional[str] = None
+    username: Optional[str] = None
+    password: str = Field(min_length=1)
+
+class OrganizationCreateInput(BaseModel):
+    model_config = ConfigDict(extra="ignore")
+    name: str = Field(min_length=2, max_length=255)
+    organizationType: Literal["hospital", "clinic", "pharmacy", "diagnostic_lab"] = "hospital"
     registrationNumber: str = Field(min_length=2, max_length=100)
     address: Optional[str] = None
     phone: Optional[str] = None
@@ -29,9 +46,9 @@ class OrganizationsListResponse(BaseModel):
     meta: EnvelopeMeta
 
 class PractitionerCreateInput(BaseModel):
-    model_config = ConfigDict(extra="forbid")
+    model_config = ConfigDict(extra="ignore")
     fullName: str = Field(min_length=2, max_length=200)
-    phone: str = Field(pattern=r"^\+?[0-9]{10,15}$")
+    phone: str = Field(pattern=r"^\+?[0-9\s\-]{8,20}$")
     email: Optional[str] = None
     password: str = Field(min_length=8)
     registrationNumber: str = Field(min_length=3, max_length=100)

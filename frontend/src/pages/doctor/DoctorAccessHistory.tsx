@@ -1,7 +1,7 @@
 import { useEffect, useState } from 'react'
 import Icon from '../../components/Icon'
 import PageHeader from '../../components/PageHeader'
-import { card, button, emptyBox } from '../../lib/ui'
+import { card, emptyBox } from '../../lib/ui'
 import { getDoctorAccessRequests, type DoctorAccessRequestItem } from '../../api/doctor'
 
 type FilterStatus = 'all' | 'pending' | 'approved' | 'expired' | 'denied'
