@@ -1,4 +1,4 @@
-import { Link, NavLink, Outlet } from 'react-router-dom'
+import { Link, NavLink, Outlet, Navigate } from 'react-router-dom'
 import Icon from '../../components/Icon'
 import type { IconName } from '../../components/Icon'
 import Logo from '../../components/Logo'
@@ -14,9 +14,9 @@ interface NavItem {
 }
 
 const navItems: NavItem[] = [
-  { to: '/app', label: 'Overview', icon: 'home', end: true },
-  { to: '/app/patients', label: 'Patients', icon: 'users' },
-  { to: '/app/practitioners', label: 'Practitioners', icon: 'stethoscope' },
+  { to: '/app/hospital', label: 'Overview', icon: 'home', end: true },
+  { to: '/app/hospital/patients', label: 'Patients', icon: 'users' },
+  { to: '/app/hospital/practitioners', label: 'Practitioners', icon: 'stethoscope' },
 ]
 
 function HospitalSidebar() {
@@ -26,7 +26,7 @@ function HospitalSidebar() {
 
   return (
     <aside className="fixed inset-x-0 bottom-0 z-30 border-t border-line bg-white px-2 pt-1.5 pb-[calc(6px+env(safe-area-inset-bottom))] min-[901px]:sticky min-[901px]:top-0 min-[901px]:flex min-[901px]:h-dvh min-[901px]:flex-col min-[901px]:gap-7 min-[901px]:border-t-0 min-[901px]:border-r min-[901px]:px-4.5 min-[901px]:py-6">
-      <Link to="/app" aria-label="Mediclaim overview" className="hidden min-[901px]:block min-[901px]:px-2">
+      <Link to="/app/hospital" aria-label="Mediclaim hospital portal" className="hidden min-[901px]:block min-[901px]:px-2">
         <Logo />
       </Link>
 
@@ -78,12 +78,22 @@ function HospitalSidebar() {
 }
 
 export default function HospitalLayout() {
+  const user = authApi.getCurrentUser()
+
+  if (!user) {
+    return <Navigate to="/auth" replace />
+  }
+
+  if (user.role !== 'hospital_admin' && user.role !== 'organization' && user.role !== 'admin') {
+    return <Navigate to="/app" replace />
+  }
+
   return (
     <div className="grid min-h-dvh grid-cols-1 bg-mist min-[901px]:grid-cols-[268px_minmax(0,1fr)]">
       <HospitalSidebar />
       <div className="min-w-0">
         <div className="sticky top-0 z-20 flex items-center justify-between border-b border-line bg-white/90 px-4 pt-[calc(0.625rem+env(safe-area-inset-top))] pb-2.5 backdrop-blur-md min-[901px]:hidden">
-          <Link to="/app" aria-label="Mediclaim overview"><Logo size={30} /></Link>
+          <Link to="/app/hospital" aria-label="Mediclaim hospital portal"><Logo size={30} /></Link>
           <UserMenu />
         </div>
         <main className="px-4 pt-5 pb-[calc(5.5rem+env(safe-area-inset-bottom))] sm:px-6 min-[901px]:px-10 min-[901px]:pt-9 min-[901px]:pb-16">

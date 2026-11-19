@@ -76,7 +76,7 @@ export async function request<T>(
   let response: Response
   try {
     response = await fetch(url, { ...options, headers })
-  } catch (networkErr: any) {
+  } catch {
     throw new ApiError(0, 'Unable to connect to Mediclaim server. Check your connection.', 'NETWORK_ERROR')
   }
 
@@ -95,6 +95,7 @@ export async function request<T>(
 
     if (response.status === 401) {
       setStoredToken(null)
+      setStoredUser(null)
     }
 
     throw new ApiError(response.status, message, code, errors)
