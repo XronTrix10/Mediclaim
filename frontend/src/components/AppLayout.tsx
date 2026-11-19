@@ -1,10 +1,12 @@
+import { Navigate } from 'react-router-dom'
 import { Link, Outlet } from 'react-router-dom'
 import Sidebar from './Sidebar'
 import Logo from './Logo'
 import UserMenu from './UserMenu'
 import HealthDataProvider from '../store/HealthDataProvider'
+import { authApi } from '../api/auth'
 
-export default function AppLayout() {
+function PatientLayout() {
   return (
     <HealthDataProvider>
       <div className="grid min-h-dvh grid-cols-1 bg-mist min-[901px]:grid-cols-[268px_minmax(0,1fr)]">
@@ -26,4 +28,28 @@ export default function AppLayout() {
       </div>
     </HealthDataProvider>
   )
+}
+
+/**
+ * AppLayout — dispatches to PatientLayout, DoctorLayout, or HospitalLayout
+ * based on the JWT role stored in localStorage.
+ *
+ * Doctor and Hospital layouts are rendered via their own nested route trees
+ * in App.tsx, so AppLayout only needs to guard against mis-routed users.
+ */
+export default function AppLayout() {
+  const user = authApi.getCurrentUser()
+
+  // Not logged in → redirect to auth
+  if (!user) {
+    return <Navigate to="/auth" replace />
+  }
+
+  // Admin → redirect to admin portal
+  if (user.role === 'admin') {
+    return <Navigate to="/admin" replace />
+  }
+
+  // Patient (default)
+  return <PatientLayout />
 }

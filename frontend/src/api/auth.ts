@@ -106,6 +106,55 @@ export const authApi = {
     return res.data
   },
 
+  // ── Doctor auth ──────────────────────────────────────────────
+  async registerDoctor(payload: {
+    fullName: string
+    dateOfBirth: string
+    phone: string
+    aadhaarNumber: string
+    password: string
+    medicalLicenseNumber: string
+    specialization: string
+    yearsOfExperience?: number
+    hospitalName?: string
+  }): Promise<RegisterResult> {
+    const res = await api.post<{ status: string; data: RegisterResult }>('/doctor/register', payload)
+    return res.data
+  },
+
+  async doctorRequestOtp(payload: { phone: string }): Promise<RequestOtpResult> {
+    const res = await api.post<{ status: string; data: RequestOtpResult }>('/doctor/login/request-otp', payload)
+    return res.data
+  },
+
+  async doctorVerifyOtp(payload: { phone: string; otp: string }): Promise<AuthSession> {
+    const res = await api.post<{ status: string; data: AuthSession }>('/doctor/login/verify-otp', payload)
+    setStoredToken(res.data.accessToken)
+    setStoredUser(res.data.user)
+    return res.data
+  },
+
+  // ── Hospital auth ─────────────────────────────────────────────
+  async registerHospital(payload: {
+    name: string
+    registrationNumber: string
+    type: string
+    address: string
+    phone: string
+    email: string
+    password: string
+  }): Promise<{ orgId: string; message: string }> {
+    const res = await api.post<{ status: string; data: { orgId: string; message: string } }>('/hospital/register', payload)
+    return res.data
+  },
+
+  async hospitalLogin(payload: { email: string; password: string }): Promise<AuthSession> {
+    const res = await api.post<{ status: string; data: AuthSession }>('/hospital/login', payload)
+    setStoredToken(res.data.accessToken)
+    setStoredUser(res.data.user)
+    return res.data
+  },
+
   async logout(): Promise<void> {
     try {
       await api.post('/auth/logout', {})

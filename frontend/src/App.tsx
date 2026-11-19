@@ -16,6 +16,33 @@ import AdminOrganizations from './pages/admin/AdminOrganizations'
 import AdminPractitioners from './pages/admin/AdminPractitioners'
 import AdminEmergencyEvents from './pages/admin/AdminEmergencyEvents'
 
+// Doctor pages
+import DoctorLayout from './pages/doctor/DoctorLayout'
+import DoctorDashboard from './pages/doctor/DoctorDashboard'
+import DoctorPatients from './pages/doctor/DoctorPatients'
+import DoctorPatientDetail from './pages/doctor/DoctorPatientDetail'
+import DoctorRequestAccess from './pages/doctor/DoctorRequestAccess'
+import DoctorAccessHistory from './pages/doctor/DoctorAccessHistory'
+
+// Hospital pages
+import HospitalLayout from './pages/hospital/HospitalLayout'
+import HospitalDashboard from './pages/hospital/HospitalDashboard'
+import HospitalPatients from './pages/hospital/HospitalPatients'
+import HospitalPractitioners from './pages/hospital/HospitalPractitioners'
+
+import { authApi } from './api/auth'
+
+/** Guard that sends doctor and hospital users to their role-specific layout. */
+function RoleRouter() {
+  const user = authApi.getCurrentUser()
+  if (!user) return <Navigate to="/auth" replace />
+  if (user.role === 'admin') return <Navigate to="/admin" replace />
+  if (user.role === 'practitioner') return <Navigate to="/app/doctor" replace />
+  if (user.role === 'hospital_admin' || user.role === 'organization') return <Navigate to="/app/hospital" replace />
+  // patient — handled by AppLayout / patient routes below
+  return null
+}
+
 export default function App() {
   return (
     <Routes>
@@ -28,12 +55,28 @@ export default function App() {
       <Route path="/register" element={<Navigate to="/auth?mode=register" replace />} />
       <Route path="/admin/login" element={<Navigate to="/auth/admin" replace />} />
 
-      {/* TODO: wrap in a route guard once auth is wired up (src/auth/) */}
+      {/* Patient portal (default /app) */}
       <Route path="/app" element={<AppLayout />}>
         <Route index element={<Dashboard />} />
         <Route path="timeline" element={<Timeline />} />
         <Route path="records" element={<Records />} />
         <Route path="access" element={<Access />} />
+      </Route>
+
+      {/* Doctor portal */}
+      <Route path="/app/doctor" element={<DoctorLayout />}>
+        <Route index element={<DoctorDashboard />} />
+        <Route path="patients" element={<DoctorPatients />} />
+        <Route path="patients/:mediclaimId" element={<DoctorPatientDetail />} />
+        <Route path="request-access" element={<DoctorRequestAccess />} />
+        <Route path="access-history" element={<DoctorAccessHistory />} />
+      </Route>
+
+      {/* Hospital portal */}
+      <Route path="/app/hospital" element={<HospitalLayout />}>
+        <Route index element={<HospitalDashboard />} />
+        <Route path="patients" element={<HospitalPatients />} />
+        <Route path="practitioners" element={<HospitalPractitioners />} />
       </Route>
 
       {/* Admin portal */}
