@@ -382,9 +382,19 @@ export default function PrescriptionUploader({ ref }: { ref?: Ref<UploaderHandle
 
             {/* PHASE 1: PARSING */}
             {phase === 'parsing' && (
-              <div className="rounded-[16px] border border-line bg-mist/60 p-5 text-center text-sm text-ink-soft">
-                <p className="font-semibold text-ink">Analyzing document with Gemini...</p>
-                <p className="mt-1 text-xs text-ink-faint">Extracting conditions, vaccinations, prescriptions, allergies, and reports.</p>
+              <div className="flex flex-col items-center justify-center rounded-[20px] border border-line bg-mist/60 px-6 py-9 text-center text-sm text-ink-soft shadow-inner">
+                <div className="relative mb-3 flex size-12 items-center justify-center">
+                  <div className="size-12 animate-spin rounded-full border-[3px] border-brand-tint border-t-brand" />
+                  <div className="absolute size-2.5 rounded-full bg-brand animate-ping" />
+                </div>
+                <p className="font-semibold text-ink text-[1rem]">Analyzing document with Gemini...</p>
+                <p className="mt-1 max-w-sm text-xs text-ink-faint">
+                  Reading medical text, prescriptions, doses, diagnoses, and lab results into structured timeline records.
+                </p>
+                <div className="mt-4 inline-flex items-center gap-2 rounded-full bg-brand-tint/80 px-3.5 py-1 text-[11px] font-semibold text-brand-deep">
+                  <span className="size-2 rounded-full bg-brand animate-pulse" />
+                  Multimodal clinical extraction in progress
+                </div>
               </div>
             )}
 

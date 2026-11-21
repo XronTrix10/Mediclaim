@@ -37,8 +37,8 @@ services:
       ADMIN_PASSWORD: ${ADMIN_PASSWORD:-Admin@123}
       DATABASE_URL: postgresql://${POSTGRES_USER:-mediclaim}:${POSTGRES_PASSWORD:-mediclaim_secret_password}@postgres:5432/${POSTGRES_DB:-mediclaim}
       STORAGE_DIR: /data/uploads
-      GEMINI_API_KEY: ${GEMINI_API_KEY:-}
-      GEMINI_MODEL: ${GEMINI_MODEL:-gemini-2.5-flash}
+      GEMINI_API_KEY: ${GEMINI_API_KEY:?GEMINI_API_KEY must be set in your root .env file}
+      GEMINI_MODEL: ${GEMINI_MODEL:-gemini-3-flash-preview}
     volumes:
       - ./backend:/app
       - backend_data:/data

@@ -283,16 +283,12 @@ def parse_document_with_gemini(
 ) -> ParsedDocumentPayload:
     """
     Mandatory Gemini multimodal extraction.
-    Raises RuntimeError / ValueError if GEMINI_API_KEY is missing, the API fails,
-    or no structured clinical records could be extracted.
+    Raises RuntimeError / ValueError if GEMINI_API_KEY is missing, the API fails across
+    all attempted candidate models, or no structured clinical records could be extracted.
     """
     if not GEMINI_API_KEY or not GEMINI_API_KEY.strip():
         raise RuntimeError("GEMINI_API_KEY is not configured.")
 
-    url = (
-        f"https://generativelanguage.googleapis.com/v1beta/models/"
-        f"{GEMINI_MODEL}:generateContent?key={GEMINI_API_KEY.strip()}"
-    )
     user_prompt = (
         "Parse this medical document and extract all structured clinical records "
         "(conditions, vaccinations, prescriptions, medications, allergies, and diagnostic/birth/lab reports) "
@@ -303,13 +299,13 @@ def parse_document_with_gemini(
 
     b64_data = base64.b64encode(content_bytes).decode("ascii")
     body = {
-        "system_instruction": {"parts": [{"text": EXTRACTION_SYSTEM_PROMPT}]},
+        "systemInstruction": {"parts": [{"text": EXTRACTION_SYSTEM_PROMPT}]},
         "contents": [
             {
                 "parts": [
                     {
-                        "inline_data": {
-                            "mime_type": mime_type or "application/pdf",
+                        "inlineData": {
+                            "mimeType": mime_type or "application/pdf",
                             "data": b64_data,
                         }
                     },
@@ -324,14 +320,57 @@ def parse_document_with_gemini(
         },
     }
 
-    with httpx.Client(timeout=PARSER_TIMEOUT_SECONDS) as client:
-        resp = client.post(url, json=body)
-        resp.raise_for_status()
-        raw_json = resp.json()
+    # Model selection with automatic fallback cascade if the primary model is busy or deprecated
+    models_to_try = [GEMINI_MODEL]
+    for alt in ["gemini-3-flash-preview", "gemini-3.5-flash-lite", "gemini-flash-latest"]:
+        if alt not in models_to_try:
+            models_to_try.append(alt)
+
+    last_error: Optional[Exception] = None
+    successful_model: Optional[str] = None
+    raw_json: Optional[Dict[str, Any]] = None
+
+    for candidate_model in models_to_try:
+        url = (
+            f"https://generativelanguage.googleapis.com/v1beta/models/"
+            f"{candidate_model}:generateContent?key={GEMINI_API_KEY.strip()}"
+        )
+        logger.info(
+            "Calling Gemini (%s) to extract medical document (%s, %d bytes)...",
+            candidate_model,
+            mime_type,
+            len(content_bytes),
+        )
+        try:
+            with httpx.Client(timeout=PARSER_TIMEOUT_SECONDS) as client:
+                resp = client.post(url, json=body)
+                resp.raise_for_status()
+                raw_json = resp.json()
+                successful_model = candidate_model
+                break
+        except httpx.HTTPStatusError as err:
+            status_code = err.response.status_code if err.response else 0
+            err_text = err.response.text[:200] if err.response else str(err)
+            logger.warning(
+                "Gemini model '%s' failed with status %d: %s. Attempting fallback...",
+                candidate_model,
+                status_code,
+                err_text,
+            )
+            last_error = err
+            # Only retry next model on 404 (model not found/deprecated) or 503 (high demand)
+            if status_code not in (404, 503, 429):
+                raise
+        except Exception as exc:
+            logger.warning("Gemini model '%s' error: %s. Attempting fallback...", candidate_model, exc)
+            last_error = exc
+
+    if not raw_json or not successful_model:
+        raise last_error or RuntimeError("All candidate Gemini models failed to process the document.")
 
     candidates = raw_json.get("candidates") or []
     if not candidates:
-        raise ValueError("Gemini returned no candidates for this document.")
+        raise ValueError(f"Gemini ({successful_model}) returned no candidates for this document.")
 
     parts = candidates[0].get("content", {}).get("parts") or []
     text_out = "".join(p.get("text", "") for p in parts if isinstance(p, dict)).strip()

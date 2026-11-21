@@ -61,6 +61,12 @@ app.add_exception_handler(Exception, unhandled_exception_handler)
 
 @app.on_event("startup")
 def startup():
+    from app.config import GEMINI_API_KEY
+    if not GEMINI_API_KEY or not GEMINI_API_KEY.strip():
+        raise RuntimeError(
+            "CRITICAL: GEMINI_API_KEY is not configured. Mediclaim medical document extraction "
+            "requires a valid Gemini API key to operate. Refusing to start backend service."
+        )
     init_db()
     from app.services.auth_service import seed_admin_user
     seed_admin_user()
