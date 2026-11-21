@@ -14,8 +14,14 @@ import type { Kind, RecordStatus } from '../../types'
 const MAX_BYTES = 10 * 1024 * 1024
 const ACCEPT = 'application/pdf,image/png,image/jpeg,image/webp'
 
+export interface UploaderOptions {
+  defaultTitle?: string
+  defaultDate?: string
+  defaultType?: string
+}
+
 export interface UploaderHandle {
-  openPicker: () => void
+  openPicker: (options?: UploaderOptions) => void
 }
 
 interface PendingFile {
@@ -81,8 +87,18 @@ export default function PrescriptionUploader({ ref }: { ref?: Ref<UploaderHandle
   const [fallbackStatus, setFallbackStatus] = useState<RecordStatus>('completed')
   const [fallbackProvider, setFallbackProvider] = useState('')
   const [fallbackDetail, setFallbackDetail] = useState('')
+  const optionsRef = useRef<UploaderOptions | undefined>(undefined)
 
-  useImperativeHandle(ref, () => ({ openPicker: () => inputRef.current?.click() }), [])
+  useImperativeHandle(
+    ref,
+    () => ({
+      openPicker: (options?: UploaderOptions) => {
+        optionsRef.current = options
+        inputRef.current?.click()
+      },
+    }),
+    [],
+  )
 
   useEffect(() => {
     return () => {
@@ -92,6 +108,7 @@ export default function PrescriptionUploader({ ref }: { ref?: Ref<UploaderHandle
 
   const resetState = () => {
     if (pending?.localPreviewUrl) URL.revokeObjectURL(pending.localPreviewUrl)
+    optionsRef.current = undefined
     setPending(null)
     setPhase('idle')
     setSaveError(null)
@@ -112,14 +129,17 @@ export default function PrescriptionUploader({ ref }: { ref?: Ref<UploaderHandle
     if (!isPdf && !isImage) return setError('Please choose a PDF, PNG, JPEG or WEBP file.')
     if (file.size > MAX_BYTES) return setError(`That file is ${formatFileSize(file.size)}. The limit is 10 MB.`)
 
-    const defaultTitle = file.name.replace(/\.[^/.]+$/, '').replace(/[_-]+/g, ' ').trim() || 'Uploaded medical document'
+    const activeOpts = optionsRef.current
+    const defaultTitle = activeOpts?.defaultTitle || file.name.replace(/\.[^/.]+$/, '').replace(/[_-]+/g, ' ').trim() || 'Uploaded medical document'
+    const defaultDate = activeOpts?.defaultDate || todayISO()
+    const defaultKind = (activeOpts?.defaultType as Kind) || 'report'
     const localPreviewUrl = URL.createObjectURL(file)
     setPending({ file, fileType: isPdf ? 'pdf' : 'image', localPreviewUrl })
     setFallbackTitle(defaultTitle)
-    setFallbackDate(todayISO())
+    setFallbackDate(defaultDate)
     setFallbackProvider('')
     setFallbackDetail('')
-    setFallbackKind('report')
+    setFallbackKind(defaultKind)
     setFallbackStatus('completed')
     setSaveError(null)
     setShowPreview(true)
@@ -132,7 +152,11 @@ export default function PrescriptionUploader({ ref }: { ref?: Ref<UploaderHandle
 
     setPhase('parsing')
     try {
-      const res = await recordsApi.uploadAndParseDocument(file, { title: defaultTitle })
+      const res = await recordsApi.uploadAndParseDocument(file, {
+        title: defaultTitle,
+        consultationDate: activeOpts?.defaultDate,
+        documentType: activeOpts?.defaultType,
+      })
       setDocumentId(res.documentId)
       setRemoteFileUrl(res.fileUrl)
 

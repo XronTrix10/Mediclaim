@@ -19,6 +19,10 @@ export interface HealthEvent {
   provider: string
   status?: RecordStatus
   source?: RecordSource
+  // Birth milestone metadata
+  isBirthRecord?: boolean
+  hasCertificate?: boolean
+  missingRecordHint?: string
   // Allergy details
   severity?: AllergySeverity
   criticality?: AllergyCriticality

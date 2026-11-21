@@ -9,6 +9,7 @@ import { ageAt, formatDate } from '../lib/format'
 import { button, emptyBox } from '../lib/ui'
 import { useHealthData } from '../store/healthData'
 import ManualRecordModal from '../components/records/ManualRecordModal'
+import type { ManualRecordInitialData } from '../components/records/ManualRecordModal'
 import RecordDetailDialog from '../components/records/RecordDetailDialog'
 import CorrectionDialog from '../components/records/CorrectionDialog'
 import { PrescriptionUploader } from '../components/dashboard'
@@ -82,6 +83,8 @@ export default function Timeline() {
   const [view, setView] = useState<View>('timeline')
   const [filter, setFilter] = useState<KindFilter>('all')
   const [manualModalOpen, setManualModalOpen] = useState(false)
+  const [manualInitialData, setManualInitialData] = useState<ManualRecordInitialData | undefined>(undefined)
+  const [manualInitialKind, setManualInitialKind] = useState<Kind>('vaccination')
   const [viewing, setViewing] = useState<HealthEvent | null>(null)
   const [correcting, setCorrecting] = useState<{ open: boolean; recordId?: string }>({ open: false })
 
@@ -101,8 +104,12 @@ export default function Timeline() {
       <PrescriptionUploader ref={uploader} />
       <ManualRecordModal
         open={manualModalOpen}
-        initialKind={filter !== 'all' ? (filter as Kind) : 'vaccination'}
-        onClose={() => setManualModalOpen(false)}
+        initialKind={manualInitialKind}
+        initialData={manualInitialData}
+        onClose={() => {
+          setManualModalOpen(false)
+          setManualInitialData(undefined)
+        }}
       />
       <RecordDetailDialog
         record={viewing}
@@ -118,7 +125,11 @@ export default function Timeline() {
         <button
           type="button"
           className={button('soft')}
-          onClick={() => setManualModalOpen(true)}
+          onClick={() => {
+            setManualInitialKind(filter !== 'all' ? (filter as Kind) : 'vaccination')
+            setManualInitialData(undefined)
+            setManualModalOpen(true)
+          }}
         >
           <Icon name="plus" size={17} />
           Add record
@@ -199,41 +210,139 @@ export default function Timeline() {
                     key={e.id}
                     data-kind={e.kind}
                   >
-                    <article
-                      onClick={() => setViewing(e)}
-                      className="cursor-pointer rounded-[22px] border border-line bg-white px-4 py-4 shadow-soft transition-colors hover:border-brand/40 sm:px-[22px] sm:py-[18px]"
-                    >
-                      <header className="mb-2.5 flex flex-wrap items-center gap-2">
-                        <KindTag kind={e.kind} />
-                        {shouldShowStatusPill(e) && (
-                          <span
-                            className={`rounded-full px-[11px] py-[3px] text-[0.78rem] font-semibold capitalize ${
-                              e.status === 'active' ? 'bg-brand-tint text-brand-deep' : 'bg-mist-2 text-ink-soft'
-                            }`}
-                          >
-                            {e.status}
+                    {e.isBirthRecord ? (
+                      <article
+                        onClick={() => setViewing(e)}
+                        className={`cursor-pointer rounded-[22px] border ${
+                          !e.hasCertificate
+                            ? 'border-amber-300/90 bg-amber-50/30 hover:border-amber-400'
+                            : 'border-line bg-white hover:border-brand/40'
+                        } px-4 py-4 shadow-soft transition-colors sm:px-[22px] sm:py-[18px]`}
+                      >
+                        <header className="mb-2.5 flex flex-wrap items-center gap-2">
+                          <KindTag kind={e.kind} />
+                          <span className="rounded-full bg-brand-tint px-2.5 py-0.5 text-[0.75rem] font-semibold text-brand-deep">
+                            Birth & Life Origin
                           </span>
+                          {!e.hasCertificate ? (
+                            <span className="inline-flex items-center gap-1 rounded-full bg-amber-100 px-2.5 py-0.5 text-[0.75rem] font-semibold text-amber-800 dark:bg-amber-950/60 dark:text-amber-300">
+                              <Icon name="alert" size={12} />
+                              Missing certificate
+                            </span>
+                          ) : (
+                            <span className="inline-flex items-center gap-1 rounded-full bg-emerald-100 px-2.5 py-0.5 text-[0.75rem] font-semibold text-emerald-800 dark:bg-emerald-950/60 dark:text-emerald-300">
+                              <Icon name="check" size={12} />
+                              Verified birth certificate
+                            </span>
+                          )}
+                          {e.fileUrl && (
+                            <span className="inline-flex items-center gap-1 rounded-full bg-mist px-2.5 py-[3px] text-[0.75rem] font-medium text-ink-soft">
+                              <Icon name={e.fileType === 'pdf' ? 'file' : 'image'} size={12} />
+                              Preview file
+                            </span>
+                          )}
+                          <time dateTime={e.date} className="w-full text-[0.85rem] text-ink-faint sm:ml-auto sm:w-auto">
+                            {formatDate(e.date)}
+                          </time>
+                        </header>
+
+                        <h3 className="mb-1 text-[1.15rem] sm:text-[1.25rem] [overflow-wrap:anywhere]">{e.title}</h3>
+                        <p className="text-[0.92rem] text-ink-soft sm:text-[0.95rem]">{e.detail}</p>
+
+                        {!e.hasCertificate && (
+                          <div className="mt-3 rounded-[14px] border border-amber-200/90 bg-amber-50/80 p-3 text-[0.82rem] text-amber-900 dark:border-amber-800/40 dark:bg-amber-950/40 dark:text-amber-200">
+                            <div className="flex items-start gap-2">
+                              <span className="shrink-0 text-base">💡</span>
+                              <div className="leading-snug">
+                                <strong className="font-semibold">Recommended birth & neonatal records:</strong>
+                                <p className="mt-0.5 text-ink-soft">
+                                  Upload your official birth certificate, maternity card, or early vaccinations like Hepatitis B (birth dose) and BCG.
+                                </p>
+                              </div>
+                            </div>
+                            <div className="mt-2.5 flex flex-wrap gap-2">
+                              <button
+                                type="button"
+                                onClick={(ev) => {
+                                  ev.stopPropagation()
+                                  uploader.current?.openPicker({
+                                    defaultTitle: 'Birth certificate',
+                                    defaultDate: profile.dateOfBirth,
+                                    defaultType: 'report',
+                                  })
+                                }}
+                                className={`${button('primary', 'sm')} text-xs`}
+                              >
+                                <Icon name="upload" size={13} />
+                                Upload birth certificate
+                              </button>
+                              <button
+                                type="button"
+                                onClick={(ev) => {
+                                  ev.stopPropagation()
+                                  setManualInitialKind('report')
+                                  setManualInitialData({
+                                    title: 'Birth record',
+                                    date: profile.dateOfBirth,
+                                    provider: 'Civil Registrar / Maternity Hospital',
+                                    notes: 'Birth weight, delivery summary, or hospital discharge note.',
+                                  })
+                                  setManualModalOpen(true)
+                                }}
+                                className={`${button('soft', 'sm')} text-xs`}
+                              >
+                                <Icon name="plus" size={13} />
+                                Enter details manually
+                              </button>
+                            </div>
+                          </div>
                         )}
-                        {e.fileUrl && (
-                          <span className="inline-flex items-center gap-1 rounded-full bg-mist px-2.5 py-[3px] text-[0.75rem] font-medium text-ink-soft">
-                            <Icon name={e.fileType === 'pdf' ? 'file' : 'image'} size={12} />
-                            Preview file
+
+                        <footer className="mt-3.5 flex flex-wrap items-center justify-between gap-x-3 gap-y-1 border-t border-dashed border-line-strong pt-3 text-[0.85rem] text-ink-faint">
+                          <span className="inline-flex min-w-0 items-center gap-1.5">
+                            <Icon name="stethoscope" size={15} />
+                            <span className="[overflow-wrap:anywhere]">{e.provider}</span>
                           </span>
-                        )}
-                        <time dateTime={e.date} className="w-full text-[0.85rem] text-ink-faint sm:ml-auto sm:w-auto">
-                          {formatDate(e.date)}
-                        </time>
-                      </header>
-                      <h3 className="mb-1 text-[1.15rem] sm:text-[1.25rem] [overflow-wrap:anywhere]">{e.title}</h3>
-                      <p className="text-[0.92rem] text-ink-soft sm:text-[0.95rem]">{e.detail}</p>
-                      <footer className="mt-3.5 flex flex-wrap items-center justify-between gap-x-3 gap-y-1 border-t border-dashed border-line-strong pt-3 text-[0.85rem] text-ink-faint">
-                        <span className="inline-flex min-w-0 items-center gap-1.5">
-                          <Icon name="stethoscope" size={15} />
-                          <span className="[overflow-wrap:anywhere]">{e.provider}</span>
-                        </span>
-                        <span>{ageAt(profile.dateOfBirth, e.date)}</span>
-                      </footer>
-                    </article>
+                          <span className="font-medium text-brand">Birth date • Timeline starting point</span>
+                        </footer>
+                      </article>
+                    ) : (
+                      <article
+                        onClick={() => setViewing(e)}
+                        className="cursor-pointer rounded-[22px] border border-line bg-white px-4 py-4 shadow-soft transition-colors hover:border-brand/40 sm:px-[22px] sm:py-[18px]"
+                      >
+                        <header className="mb-2.5 flex flex-wrap items-center gap-2">
+                          <KindTag kind={e.kind} />
+                          {shouldShowStatusPill(e) && (
+                            <span
+                              className={`rounded-full px-[11px] py-[3px] text-[0.78rem] font-semibold capitalize ${
+                                e.status === 'active' ? 'bg-brand-tint text-brand-deep' : 'bg-mist-2 text-ink-soft'
+                              }`}
+                            >
+                              {e.status}
+                            </span>
+                          )}
+                          {e.fileUrl && (
+                            <span className="inline-flex items-center gap-1 rounded-full bg-mist px-2.5 py-[3px] text-[0.75rem] font-medium text-ink-soft">
+                              <Icon name={e.fileType === 'pdf' ? 'file' : 'image'} size={12} />
+                              Preview file
+                            </span>
+                          )}
+                          <time dateTime={e.date} className="w-full text-[0.85rem] text-ink-faint sm:ml-auto sm:w-auto">
+                            {formatDate(e.date)}
+                          </time>
+                        </header>
+                        <h3 className="mb-1 text-[1.15rem] sm:text-[1.25rem] [overflow-wrap:anywhere]">{e.title}</h3>
+                        <p className="text-[0.92rem] text-ink-soft sm:text-[0.95rem]">{e.detail}</p>
+                        <footer className="mt-3.5 flex flex-wrap items-center justify-between gap-x-3 gap-y-1 border-t border-dashed border-line-strong pt-3 text-[0.85rem] text-ink-faint">
+                          <span className="inline-flex min-w-0 items-center gap-1.5">
+                            <Icon name="stethoscope" size={15} />
+                            <span className="[overflow-wrap:anywhere]">{e.provider}</span>
+                          </span>
+                          <span>{ageAt(profile.dateOfBirth, e.date)}</span>
+                        </footer>
+                      </article>
+                    )}
                   </li>
                 ))}
               </ul>

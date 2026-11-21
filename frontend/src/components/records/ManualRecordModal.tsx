@@ -16,9 +16,17 @@ import type {
   RecordStatus,
 } from '../../types'
 
-interface ManualRecordModalProps {
+export interface ManualRecordInitialData {
+  title?: string
+  date?: string
+  provider?: string
+  notes?: string
+}
+
+export interface ManualRecordModalProps {
   open: boolean
   initialKind?: Kind
+  initialData?: ManualRecordInitialData
   onClose: () => void
   onSuccess?: (event: HealthEvent) => void
 }
@@ -34,6 +42,7 @@ const tabKinds: { kind: Kind; label: string; icon: IconName }[] = [
 export default function ManualRecordModal({
   open,
   initialKind = 'vaccination',
+  initialData,
   onClose,
   onSuccess,
 }: ManualRecordModalProps) {
@@ -88,9 +97,32 @@ export default function ManualRecordModal({
   useEffect(() => {
     if (open) {
       if (initialKind) setSelectedKind(initialKind)
+      if (initialData) {
+        if (initialData.title) {
+          setReportName(initialData.title)
+          setVaccineName(initialData.title)
+          setConditionName(initialData.title)
+        }
+        if (initialData.date) {
+          setReportDate(initialData.date)
+          setAdministeredDate(initialData.date)
+          setOnsetDate(initialData.date)
+          setStartDate(initialData.date)
+        }
+        if (initialData.provider) {
+          setRepProvider(initialData.provider)
+          setVacProvider(initialData.provider)
+          setCondProvider(initialData.provider)
+        }
+        if (initialData.notes) {
+          setConclusion(initialData.notes)
+          setVacNotes(initialData.notes)
+          setCondNotes(initialData.notes)
+        }
+      }
       setError(null)
     }
-  }, [open, initialKind])
+  }, [open, initialKind, initialData])
 
   const resetForm = () => {
     setVaccineName('')

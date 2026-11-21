@@ -18,7 +18,7 @@ import {
   StatsSummary,
   TimelineSection,
 } from '../components/dashboard'
-import type { UploaderHandle } from '../components/dashboard'
+import type { UploaderHandle, UploaderOptions } from '../components/dashboard'
 
 const quickLinks: { to: string; icon: IconName; title: string; hint: string }[] = [
   { to: '/app/timeline', icon: 'timeline', title: 'Lifelong timeline', hint: 'Timeline and health graph' },
@@ -29,7 +29,7 @@ const quickLinks: { to: string; icon: IconName; title: string; hint: string }[] 
 export default function Dashboard() {
   const { profile, events, prescriptions, grants, sampleLoaded, actions } = useHealthData()
   const uploader = useRef<UploaderHandle>(null)
-  const openUpload = () => uploader.current?.openPicker()
+  const openUpload = (options?: UploaderOptions) => uploader.current?.openPicker(options)
   const [manualModalOpen, setManualModalOpen] = useState(false)
   const [manualInitialKind, setManualInitialKind] = useState<Kind>('vaccination')
   const allergies = events.filter((e) => e.kind === 'allergy')
@@ -60,7 +60,7 @@ export default function Dashboard() {
           <Icon name="plus" size={17} />
           Add record
         </button>
-        <button type="button" className={button('primary')} onClick={openUpload}>
+        <button type="button" className={button('primary')} onClick={() => openUpload()}>
           <Icon name="upload" size={17} />
           Upload record
         </button>
@@ -77,7 +77,7 @@ export default function Dashboard() {
               <StatsSummary events={events} />
             </div>
             <div className="order-5 min-[1080px]:order-none">
-              <PrescriptionsSection prescriptions={prescriptions} onAdd={openUpload} onDelete={actions.removePrescription} />
+              <PrescriptionsSection prescriptions={prescriptions} onAdd={() => openUpload()} onDelete={actions.removePrescription} />
             </div>
             <div className="order-3 min-[1080px]:order-none">
               <AllergiesSection allergies={allergies} onAddAllergy={actions.addAllergy} />
@@ -103,7 +103,19 @@ export default function Dashboard() {
 
           <div className="contents min-[1080px]:flex min-[1080px]:flex-col min-[1080px]:gap-5">
             <div className="order-4 min-[1080px]:order-none">
-              <TimelineSection events={events} sampleLoaded={sampleLoaded} onUpload={openUpload} onToggleSample={actions.toggleSample} />
+              <TimelineSection
+                events={events}
+                sampleLoaded={sampleLoaded}
+                onUpload={() => openUpload()}
+                onUploadBirthCertificate={() =>
+                  openUpload({
+                    defaultTitle: 'Birth certificate',
+                    defaultDate: profile.dateOfBirth,
+                    defaultType: 'report',
+                  })
+                }
+                onToggleSample={actions.toggleSample}
+              />
             </div>
             <div className="order-2 min-[1080px]:order-none">
               <ActiveAccessCard grants={grants} onRevoke={actions.revokeGrant} />

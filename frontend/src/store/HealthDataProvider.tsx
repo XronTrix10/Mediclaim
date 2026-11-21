@@ -361,6 +361,38 @@ function toPrescriptionEvent(rx: PrescriptionRecord): HealthEvent {
   }
 }
 
+export function isBirthRecordCandidate(event: HealthEvent, dob?: string): boolean {
+  if (!dob) return false
+  const eventDate = (event.date || '').slice(0, 10)
+  const birthDate = dob.slice(0, 10)
+  // Must strictly match the birth date
+  if (eventDate !== birthDate) return false
+
+  if (event.isBirthRecord) return true
+  if (event.id === 'birth-record-anchor' || event.id === 'birth-milestone-anchor') return true
+
+  const title = (event.title || '').toLowerCase()
+  const detail = (event.detail || '').toLowerCase()
+  const reportType = (event.reportType || '').toLowerCase()
+  const fileName = (event.fileName || '').toLowerCase()
+
+  const isBirthKeyword =
+    title.includes('birth') ||
+    title.includes('delivery') ||
+    title.includes('maternity') ||
+    title.includes('newborn') ||
+    title.includes('neonatal') ||
+    reportType.includes('birth') ||
+    fileName.includes('birth') ||
+    detail.includes('birth weight') ||
+    detail.includes('born')
+
+  if (isBirthKeyword) return true
+  if (event.kind === 'report') return true
+
+  return false
+}
+
 export default function HealthDataProvider({ children }: { children: ReactNode }) {
   const [state, dispatch] = useReducer(reducer, undefined, loadInitial)
   const stateRef = useRef(state)
@@ -836,11 +868,89 @@ export default function HealthDataProvider({ children }: { children: ReactNode }
       .map(toPrescriptionEvent)
       .filter((rxEv) => !ownKeys.has(`${rxEv.kind}|${rxEv.title.trim().toLowerCase()}|${rxEv.date}`))
 
-    const events = [
+    const rawEvents = [
       ...state.ownEvents,
       ...uniqueRxEvents,
       ...(state.sampleLoaded ? sampleEvents : []),
-    ].sort((a, b) => (b.date || '').localeCompare(a.date || '') || a.id.localeCompare(b.id))
+    ]
+
+    const dob = state.profile?.dateOfBirth?.slice(0, 10)
+    let mergedEvents: HealthEvent[] = []
+
+    if (dob) {
+      const birthMatches: HealthEvent[] = []
+      const otherEvents: HealthEvent[] = []
+
+      for (const e of rawEvents) {
+        if (isBirthRecordCandidate(e, dob)) {
+          birthMatches.push(e)
+        } else {
+          otherEvents.push(e)
+        }
+      }
+
+      if (birthMatches.length > 0) {
+        // Prioritize records with attached files / documents, or uploaded / clinician verified records
+        const primaryRecord =
+          birthMatches.find((e) => Boolean(e.fileUrl || e.documentId || e.prescriptionId)) ||
+          birthMatches.find((e) => e.source === 'uploaded' || e.source === 'practitioner') ||
+          birthMatches[0]
+
+        const hasCert = Boolean(
+          primaryRecord.fileUrl ||
+          primaryRecord.documentId ||
+          primaryRecord.hasCertificate ||
+          primaryRecord.source === 'uploaded' ||
+          primaryRecord.source === 'practitioner' ||
+          (primaryRecord.detail && /birth weight|apgar|hospital|maternity|full-term|delivered/i.test(primaryRecord.detail)),
+        )
+
+        const consolidatedBirthEvent: HealthEvent = {
+          ...primaryRecord,
+          id: primaryRecord.id || 'birth-record-anchor',
+          kind: 'report',
+          title: primaryRecord.title || 'Birth record',
+          short: primaryRecord.short || 'Birth',
+          detail: primaryRecord.detail || 'Birth record and life origin milestone.',
+          date: dob,
+          provider: primaryRecord.provider || 'Civil Registrar / Maternity Hospital',
+          status: primaryRecord.status || 'completed',
+          source: primaryRecord.source || (hasCert ? 'uploaded' : 'self_reported'),
+          isBirthRecord: true,
+          hasCertificate: hasCert,
+          missingRecordHint: hasCert
+            ? undefined
+            : 'Upload your birth certificate, maternity card, or neonatal vaccinations like Hepatitis B (birth dose) and BCG.',
+        }
+
+        mergedEvents = [...otherEvents, consolidatedBirthEvent]
+      } else {
+        // Synthesize anchor birth record from profile.dateOfBirth
+        const anchorBirthEvent: HealthEvent = {
+          id: 'birth-record-anchor',
+          kind: 'report',
+          title: 'Birth record',
+          short: 'Birth',
+          detail: 'Birth and life origin milestone. No official birth certificate attached yet.',
+          date: dob,
+          provider: 'Civil Registrar / Maternity Hospital',
+          status: 'completed',
+          source: 'self_reported',
+          isBirthRecord: true,
+          hasCertificate: false,
+          missingRecordHint:
+            'Upload your birth certificate, maternity card, or neonatal vaccinations like Hepatitis B (birth dose) and BCG.',
+        }
+
+        mergedEvents = [...otherEvents, anchorBirthEvent]
+      }
+    } else {
+      mergedEvents = rawEvents
+    }
+
+    const events = mergedEvents.sort(
+      (a, b) => (b.date || '').localeCompare(a.date || '') || a.id.localeCompare(b.id),
+    )
     return { ...state, events, actions }
   }, [state, actions])
 
