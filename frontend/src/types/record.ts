@@ -25,10 +25,13 @@ export interface HealthEvent {
   category?: AllergyCategory
   reaction?: string
   notes?: string
-  // Attached document (prescriptions)
+  // Attached document (any uploaded record or prescription)
   prescriptionId?: string
+  documentId?: string
   fileType?: 'pdf' | 'image'
   fileName?: string
+  fileSizeBytes?: number
+  fileUrl?: string
   // Specific fields for other record kinds
   vaccineName?: string
   doseNumber?: number
@@ -108,7 +111,7 @@ export interface PrescriptionRecord {
   fileType: 'pdf' | 'image'
   fileName: string
   fileSize?: string
-  /** In-memory blob URL for this session only. Never persisted. */
+  /** Authenticated backend URL (/api/v1/documents/doc_.../content) or session blob URL. */
   fileUrl?: string
   instructions?: string
   medications?: {

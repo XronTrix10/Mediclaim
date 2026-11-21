@@ -357,6 +357,7 @@ function toPrescriptionEvent(rx: PrescriptionRecord): HealthEvent {
     prescriptionId: rx.id,
     fileType: rx.fileType,
     fileName: rx.fileName,
+    fileUrl: rx.fileUrl,
   }
 }
 
@@ -479,6 +480,32 @@ export default function HealthDataProvider({ children }: { children: ReactNode }
 
   const actions = useMemo<HealthActions>(
     () => ({
+      refreshData: async () => {
+        if (!authApi.isAuthenticated()) return
+        try {
+          const [recordsRes, prescriptionsRes, auditRes] = await Promise.allSettled([
+            recordsApi.getRecords(),
+            recordsApi.getPrescriptions(),
+            auditApi.getAuditLogs(),
+          ])
+          const patch: Partial<HealthState> = {}
+          if (recordsRes.status === 'fulfilled' && recordsRes.value) {
+            patch.ownEvents = recordsRes.value
+          }
+          if (prescriptionsRes.status === 'fulfilled' && prescriptionsRes.value) {
+            patch.prescriptions = prescriptionsRes.value
+          }
+          if (auditRes.status === 'fulfilled' && auditRes.value && auditRes.value.length > 0) {
+            patch.audit = auditRes.value
+          }
+          if (Object.keys(patch).length > 0) {
+            dispatch({ type: 'state/hydrated', payload: patch })
+          }
+        } catch {
+          // Ignore transient refresh failures
+        }
+      },
+
       completeProfile: async (payload) => {
         if (authApi.isAuthenticated()) {
           const updated = await patientApi.completeProfile(payload)
@@ -802,11 +829,18 @@ export default function HealthDataProvider({ children }: { children: ReactNode }
   )
 
   const value = useMemo<HealthContextValue>(() => {
+    const ownKeys = new Set(
+      state.ownEvents.map((e) => `${e.kind}|${e.title.trim().toLowerCase()}|${e.date}`),
+    )
+    const uniqueRxEvents = state.prescriptions
+      .map(toPrescriptionEvent)
+      .filter((rxEv) => !ownKeys.has(`${rxEv.kind}|${rxEv.title.trim().toLowerCase()}|${rxEv.date}`))
+
     const events = [
       ...state.ownEvents,
-      ...state.prescriptions.map(toPrescriptionEvent),
+      ...uniqueRxEvents,
       ...(state.sampleLoaded ? sampleEvents : []),
-    ].sort((a, b) => b.date.localeCompare(a.date) || a.id.localeCompare(b.id))
+    ].sort((a, b) => (b.date || '').localeCompare(a.date || '') || a.id.localeCompare(b.id))
     return { ...state, events, actions }
   }, [state, actions])
 

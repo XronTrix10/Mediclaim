@@ -2,6 +2,7 @@ import { useState } from 'react'
 import Icon from '../Icon'
 import Modal from '../Modal'
 import CardHeader from '../CardHeader'
+import AuthenticatedFilePreview from '../AuthenticatedFilePreview'
 import { button, card, emptyBox } from '../../lib/ui'
 import { formatDate } from '../../lib/format'
 import type { PrescriptionRecord } from '../../types'
@@ -116,26 +117,25 @@ export default function PrescriptionsSection({ prescriptions, onAdd, onDelete }:
       >
         {viewing && (
           <>
-            <div className="rounded-[18px] border border-line bg-mist p-4 text-center">
-              {viewing.fileUrl && viewing.fileType === 'image' ? (
-                <img src={viewing.fileUrl} alt={viewing.title} className="mx-auto max-h-72 rounded-lg object-contain" />
-              ) : (
-                <div className="py-6">
-                  <Icon name="file" size={44} className="mx-auto mb-2 text-brand" />
-                  <p className="text-sm font-semibold text-ink [overflow-wrap:anywhere]">{viewing.fileName}</p>
-                  <p className="mt-1 text-xs text-ink-faint">{viewing.fileSize ?? 'Document'}</p>
-                  {viewing.fileUrl ? (
-                    <a href={viewing.fileUrl} target="_blank" rel="noopener noreferrer" className={`${button('primary', 'sm')} mt-4`}>
-                      Open document
-                    </a>
-                  ) : (
-                    <p className="mx-auto mt-3 max-w-xs text-xs text-ink-soft">
-                      The file preview is only available in the session where it was uploaded. Once the backend is connected, it will load from encrypted storage.
-                    </p>
-                  )}
-                </div>
-              )}
-            </div>
+            <AuthenticatedFilePreview
+              fileUrl={viewing.fileUrl}
+              fileName={viewing.fileName}
+              fileType={viewing.fileType}
+            />
+            {viewing.medications && viewing.medications.length > 0 && (
+              <div className="mt-4 rounded-[14px] border border-line bg-mist/50 p-3 text-xs">
+                <p className="mb-1.5 font-semibold text-ink">Medications</p>
+                <ul className="grid gap-1 text-ink-soft">
+                  {viewing.medications.map((m, idx) => (
+                    <li key={idx}>
+                      <strong className="text-ink">{m.name}</strong>
+                      {[m.dosage, m.frequency, m.duration].filter(Boolean).length > 0 &&
+                        ` — ${[m.dosage, m.frequency, m.duration].filter(Boolean).join(' · ')}`}
+                    </li>
+                  ))}
+                </ul>
+              </div>
+            )}
             {viewing.instructions && (
               <p className="mt-4 text-[0.88rem] text-ink-soft">
                 <strong className="text-ink">Doctor&rsquo;s notes:</strong> {viewing.instructions}

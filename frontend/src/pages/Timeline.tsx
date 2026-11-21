@@ -1,4 +1,4 @@
-import React, { Component, Suspense, lazy, useMemo, useState } from 'react'
+import React, { Component, Suspense, lazy, useMemo, useRef, useState } from 'react'
 import { Link } from 'react-router-dom'
 import Icon from '../components/Icon'
 import PageHeader from '../components/PageHeader'
@@ -9,6 +9,10 @@ import { ageAt, formatDate } from '../lib/format'
 import { button, emptyBox } from '../lib/ui'
 import { useHealthData } from '../store/healthData'
 import ManualRecordModal from '../components/records/ManualRecordModal'
+import RecordDetailDialog from '../components/records/RecordDetailDialog'
+import CorrectionDialog from '../components/records/CorrectionDialog'
+import { PrescriptionUploader } from '../components/dashboard'
+import type { UploaderHandle } from '../components/dashboard'
 import type { HealthEvent, Kind } from '../types'
 
 interface ErrorBoundaryProps {
@@ -63,38 +67,69 @@ const HealthGraphFlow = lazy(() => import('../components/graph/HealthGraphFlow')
 
 type View = 'timeline' | 'graph'
 
+function shouldShowStatusPill(e: HealthEvent): boolean {
+  if (!e.status) return false
+  // Vaccinations and reports are naturally completed events; avoid noisy redundant pills
+  if ((e.kind === 'vaccination' || e.kind === 'report') && (e.status === 'completed' || e.status === 'active')) {
+    return false
+  }
+  return true
+}
+
 export default function Timeline() {
   const { profile, events } = useHealthData()
+  const uploader = useRef<UploaderHandle>(null)
   const [view, setView] = useState<View>('timeline')
   const [filter, setFilter] = useState<KindFilter>('all')
   const [manualModalOpen, setManualModalOpen] = useState(false)
+  const [viewing, setViewing] = useState<HealthEvent | null>(null)
+  const [correcting, setCorrecting] = useState<{ open: boolean; recordId?: string }>({ open: false })
 
   const years = useMemo(() => {
     const groups = new Map<string, HealthEvent[]>()
-    for (const e of events) {
+    const sorted = [...events].sort((a, b) => (b.date || '').localeCompare(a.date || '') || a.id.localeCompare(b.id))
+    for (const e of sorted) {
       if (filter !== 'all' && e.kind !== filter) continue
       const year = (e.date || '').slice(0, 4) || 'Other'
       groups.set(year, [...(groups.get(year) ?? []), e])
     }
-    return [...groups.entries()]
+    return [...groups.entries()].sort(([a], [b]) => b.localeCompare(a))
   }, [events, filter])
 
   return (
     <>
+      <PrescriptionUploader ref={uploader} />
       <ManualRecordModal
         open={manualModalOpen}
         initialKind={filter !== 'all' ? (filter as Kind) : 'vaccination'}
         onClose={() => setManualModalOpen(false)}
       />
+      <RecordDetailDialog
+        record={viewing}
+        onClose={() => setViewing(null)}
+        onRequestCorrection={(r) => {
+          setViewing(null)
+          setCorrecting({ open: true, recordId: r.id })
+        }}
+      />
+      <CorrectionDialog open={correcting.open} recordId={correcting.recordId} onClose={() => setCorrecting({ open: false })} />
 
       <PageHeader title="Your timeline" subtitle="Everything on record, from birth to today.">
         <button
           type="button"
-          className={button('primary')}
+          className={button('soft')}
           onClick={() => setManualModalOpen(true)}
         >
           <Icon name="plus" size={17} />
           Add record
+        </button>
+        <button
+          type="button"
+          className={button('primary')}
+          onClick={() => uploader.current?.openPicker()}
+        >
+          <Icon name="upload" size={17} />
+          Upload record
         </button>
       </PageHeader>
 
@@ -140,9 +175,15 @@ export default function Timeline() {
           <p className="mx-auto mt-1 max-w-sm text-[0.88rem] text-ink-soft">
             Records you add or upload, and records your doctors enter, will appear here in date order.
           </p>
-          <Link to="/app" className={`${button('soft', 'sm')} mt-4`}>
-            Go to overview
-          </Link>
+          <div className="mt-4 flex flex-wrap justify-center gap-2">
+            <button type="button" className={button('primary', 'sm')} onClick={() => uploader.current?.openPicker()}>
+              <Icon name="upload" size={15} />
+              Upload document
+            </button>
+            <Link to="/app" className={button('soft', 'sm')}>
+              Go to overview
+            </Link>
+          </div>
         </div>
       ) : years.length === 0 ? (
         <p className="rounded-[18px] bg-white p-6 text-center text-ink-soft">No records of this type yet.</p>
@@ -158,16 +199,25 @@ export default function Timeline() {
                     key={e.id}
                     data-kind={e.kind}
                   >
-                    <article className="rounded-[22px] border border-line bg-white px-4 py-4 shadow-soft sm:px-[22px] sm:py-[18px]">
+                    <article
+                      onClick={() => setViewing(e)}
+                      className="cursor-pointer rounded-[22px] border border-line bg-white px-4 py-4 shadow-soft transition-colors hover:border-brand/40 sm:px-[22px] sm:py-[18px]"
+                    >
                       <header className="mb-2.5 flex flex-wrap items-center gap-2">
                         <KindTag kind={e.kind} />
-                        {e.status && (
+                        {shouldShowStatusPill(e) && (
                           <span
                             className={`rounded-full px-[11px] py-[3px] text-[0.78rem] font-semibold capitalize ${
                               e.status === 'active' ? 'bg-brand-tint text-brand-deep' : 'bg-mist-2 text-ink-soft'
                             }`}
                           >
                             {e.status}
+                          </span>
+                        )}
+                        {e.fileUrl && (
+                          <span className="inline-flex items-center gap-1 rounded-full bg-mist px-2.5 py-[3px] text-[0.75rem] font-medium text-ink-soft">
+                            <Icon name={e.fileType === 'pdf' ? 'file' : 'image'} size={12} />
+                            Preview file
                           </span>
                         )}
                         <time dateTime={e.date} className="w-full text-[0.85rem] text-ink-faint sm:ml-auto sm:w-auto">

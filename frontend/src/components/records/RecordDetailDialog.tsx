@@ -1,4 +1,5 @@
 import Modal from '../Modal'
+import AuthenticatedFilePreview from '../AuthenticatedFilePreview'
 import { KindTag } from '../Kind'
 import { button } from '../../lib/ui'
 import { ageAt, formatDate } from '../../lib/format'
@@ -28,6 +29,9 @@ export default function RecordDetailDialog({ record, onClose, onRequestCorrectio
         ['Severity', record.severity],
         ['Reaction', record.reaction],
         ['Risk level', record.criticality === 'high' ? 'High' : record.criticality === 'low' ? 'Low' : undefined],
+        ['Dosage', record.dosage],
+        ['Dose', record.doseNumber ? `Dose ${record.doseNumber}` : undefined],
+        ['Batch no.', record.batchNumber],
         ['File', record.fileName],
       ]
     : []
@@ -53,6 +57,18 @@ export default function RecordDetailDialog({ record, onClose, onRequestCorrectio
                 </div>
               ))}
           </dl>
+
+          {record.fileUrl && (
+            <div className="mt-5">
+              <p className="mb-2 text-xs font-semibold uppercase tracking-wide text-ink-faint">Attached document</p>
+              <AuthenticatedFilePreview
+                fileUrl={record.fileUrl}
+                fileName={record.fileName}
+                fileType={record.fileType}
+              />
+            </div>
+          )}
+
           <div className="mt-6 flex flex-col-reverse gap-2 sm:flex-row sm:justify-end">
             <button type="button" className={button('ghost', 'sm')} onClick={onClose}>
               Close

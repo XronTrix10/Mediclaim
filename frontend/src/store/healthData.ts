@@ -20,7 +20,7 @@ import type {
 
 export interface HealthState {
   profile: PatientProfile
-  /** Records the user owns directly (allergies). Prescriptions and sample data are merged in by the provider. */
+  /** Records the user owns directly (allergies, conditions, vaccinations, reports, medications). */
   ownEvents: HealthEvent[]
   prescriptions: PrescriptionRecord[]
   sampleLoaded: boolean
@@ -39,6 +39,7 @@ export interface GiveAccessInput {
 }
 
 export interface HealthActions {
+  refreshData: () => Promise<void>
   completeProfile: (payload: ProfileCompletionPayload) => Promise<void> | void
   updatePermittedDetails: (update: PermittedPersonalDetailsUpdate) => Promise<void> | void
   addAllergy: (input: NewAllergyInput) => Promise<HealthEvent | void> | void
