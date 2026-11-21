@@ -35,6 +35,7 @@ class HealthEvent(BaseModel):
     notes: Optional[str] = None
     # Prescription / file fields
     prescriptionId: Optional[str] = None
+    documentId: Optional[str] = None
     fileType: Optional[str] = None
     fileName: Optional[str] = None
     fileSizeBytes: Optional[int] = None

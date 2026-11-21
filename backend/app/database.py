@@ -208,4 +208,21 @@ def init_db() -> None:
 
 
 
+
+        # Medical document OCR & structured parsing extensions
+        conn.execute("ALTER TABLE medical_documents ADD COLUMN IF NOT EXISTS ocr_status varchar(30) NOT NULL DEFAULT 'pending';")
+        conn.execute("ALTER TABLE medical_documents ADD COLUMN IF NOT EXISTS extracted_text text;")
+        conn.execute("ALTER TABLE medical_documents ADD COLUMN IF NOT EXISTS extracted_payload jsonb;")
+        conn.execute("ALTER TABLE medical_documents ADD COLUMN IF NOT EXISTS parse_confidence real;")
+        conn.execute("ALTER TABLE medical_documents ADD COLUMN IF NOT EXISTS parser_provider varchar(50);")
+        conn.execute("ALTER TABLE medical_documents ADD COLUMN IF NOT EXISTS parse_error text;")
+        conn.execute("ALTER TABLE medical_documents ADD COLUMN IF NOT EXISTS parsed_at timestamp;")
+        conn.execute("ALTER TABLE medical_documents ADD COLUMN IF NOT EXISTS confirmed_at timestamp;")
+
+
+        # Link clinical records to uploaded documents & allow full clinical statuses
+        conn.execute("ALTER TABLE clinical_records ADD COLUMN IF NOT EXISTS document_id uuid REFERENCES medical_documents(id) ON DELETE SET NULL;")
+        conn.execute("ALTER TABLE clinical_records DROP CONSTRAINT IF EXISTS clinical_records_status_check;")
+        conn.execute("ALTER TABLE clinical_records ADD CONSTRAINT clinical_records_status_check CHECK (status IN ('draft', 'active', 'resolved', 'inactive', 'completed', 'discontinued', 'archived', 'deleted'));")
+
     logger.info("PostgreSQL database initialized and verified.")
