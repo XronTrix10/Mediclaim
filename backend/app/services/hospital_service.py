@@ -3,9 +3,10 @@ import secrets
 import uuid
 from typing import Any, Dict, List, Optional
 from fastapi import status
+from app.config import ACCESS_TOKEN_SECONDS
 from app.database import get_db
 from app.exceptions import APIProblemException
-from app.security import hash_password
+from app.security import hash_password, verify_password, create_access_token
 from app.services.audit_service import record_audit
 
 def _format_iso(dt: Optional[datetime]) -> str:
@@ -438,4 +439,147 @@ def create_practitioner(payload, creator_user_id: Optional[str] = None) -> Dict[
         "email": payload.email,
         "organization": org_data,
         "createdAt": _format_iso(datetime.now(timezone.utc)),
+    }
+
+
+def register_hospital(payload) -> Dict[str, Any]:
+    with get_db() as conn:
+        clean_reg = payload.registrationNumber.strip()
+        clean_phone = payload.phone.strip()
+        clean_email = payload.email.strip()
+
+        # Check registration number uniqueness in healthcare_organizations
+        existing_reg = conn.execute(
+            "SELECT id FROM healthcare_organizations WHERE registration_number = %s",
+            (clean_reg,)
+        ).fetchone()
+        if existing_reg:
+            raise APIProblemException(
+                status_code=status.HTTP_409_CONFLICT,
+                title="Organization Exists",
+                detail=f"An organization with registration number '{clean_reg}' already exists.",
+                code="RECORD_CONFLICT",
+            )
+
+        # Check phone and email uniqueness in users
+        existing_user = conn.execute(
+            "SELECT id FROM users WHERE phone = %s OR email ILIKE %s",
+            (clean_phone, clean_email)
+        ).fetchone()
+        if existing_user:
+            raise APIProblemException(
+                status_code=status.HTTP_409_CONFLICT,
+                title="Account Already Exists",
+                detail="A user with this phone number or email address already exists.",
+                code="ACCOUNT_ALREADY_EXISTS",
+            )
+
+        org_uuid = uuid.uuid4()
+        user_uuid = uuid.uuid4()
+        org_pub = _new_public_id("org")
+        user_pub = secrets.token_hex(6)[:12]
+
+        # Insert user as hospital admin (admin_verified=false until administrator approval)
+        conn.execute("""
+            INSERT INTO users (
+                id, public_id, full_name, email, phone, password_hash,
+                admin_verified, profile_complete, is_active, created_at, updated_at
+            ) VALUES (
+                %s, %s, %s, %s, %s, %s,
+                false, true, true, now(), now()
+            )
+        """, (
+            str(user_uuid), user_pub, payload.name.strip(), clean_email,
+            clean_phone, hash_password(payload.password)
+        ))
+
+        # Insert user_roles
+        conn.execute("""
+            INSERT INTO user_roles (user_id, role)
+            VALUES (%s, 'hospital_admin')
+            ON CONFLICT (user_id, role) DO NOTHING
+        """, (str(user_uuid),))
+
+        # Insert healthcare_organizations
+        conn.execute("""
+            INSERT INTO healthcare_organizations (
+                id, public_id, name, organization_type, registration_number,
+                address, phone, email, created_at
+            ) VALUES (
+                %s, %s, %s, %s, %s,
+                %s, %s, %s, now()
+            )
+        """, (
+            str(org_uuid), org_pub, payload.name.strip(), payload.type or "hospital",
+            clean_reg, payload.address, clean_phone, clean_email
+        ))
+
+        # Insert organization membership
+        conn.execute("""
+            INSERT INTO organization_memberships (
+                organization_id, user_id, designation, is_active, created_at
+            ) VALUES (%s, %s, 'Administrator', true, now())
+            ON CONFLICT (organization_id, user_id) DO NOTHING
+        """, (str(org_uuid), str(user_uuid)))
+
+    return {
+        "orgId": f"org_{org_uuid}",
+        "message": "Healthcare organization registered successfully. Awaiting administrator verification.",
+    }
+
+
+def login_hospital(payload) -> Dict[str, Any]:
+    identifier = (payload.email or payload.phone or payload.username or "").strip()
+    if not identifier:
+        raise APIProblemException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            title="Missing Identifier",
+            detail="Email address or phone number is required.",
+            code="BAD_REQUEST",
+        )
+
+    with get_db() as conn:
+        user = conn.execute("""
+            SELECT u.*
+            FROM users u
+            JOIN user_roles ur ON ur.user_id = u.id
+            WHERE (u.email ILIKE %s OR u.phone = %s)
+              AND ur.role IN ('hospital_admin', 'organization', 'admin')
+            LIMIT 1
+        """, (identifier, identifier)).fetchone()
+
+        if not user or not verify_password(payload.password, user["password_hash"]):
+            raise APIProblemException(
+                status_code=status.HTTP_401_UNAUTHORIZED,
+                title="Invalid Credentials",
+                detail="Invalid organization email, phone, or password.",
+                code="INVALID_CREDENTIALS",
+            )
+
+    if not user.get("admin_verified"):
+        raise APIProblemException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            title="Account Pending Verification",
+            detail="Your organization account is awaiting administrator verification.",
+            code="ACCOUNT_PENDING_APPROVAL",
+        )
+
+    formatted_user_id = f"usr_{user['id']}"
+    token = create_access_token(formatted_user_id, role="hospital_admin")
+
+    return {
+        "accessToken": token,
+        "tokenType": "Bearer",
+        "expiresIn": ACCESS_TOKEN_SECONDS,
+        "user": {
+            "id": formatted_user_id,
+            "fullName": user["full_name"],
+            "email": user.get("email"),
+            "phone": user["phone"],
+            "role": "hospital_admin",
+            "mediclaimId": None,
+            "isActive": bool(user["is_active"]),
+            "adminVerified": bool(user["admin_verified"]),
+            "isProfileComplete": bool(user["profile_complete"]),
+        }
     }

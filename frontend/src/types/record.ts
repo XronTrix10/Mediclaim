@@ -19,16 +19,41 @@ export interface HealthEvent {
   provider: string
   status?: RecordStatus
   source?: RecordSource
+  // Birth milestone metadata
+  isBirthRecord?: boolean
+  hasCertificate?: boolean
+  missingRecordHint?: string
   // Allergy details
   severity?: AllergySeverity
   criticality?: AllergyCriticality
   category?: AllergyCategory
   reaction?: string
   notes?: string
-  // Attached document (prescriptions)
+  // Attached document (any uploaded record or prescription)
   prescriptionId?: string
+  documentId?: string
   fileType?: 'pdf' | 'image'
   fileName?: string
+  fileSizeBytes?: number
+  fileUrl?: string
+  // Specific fields for other record kinds
+  vaccineName?: string
+  doseNumber?: number
+  batchNumber?: string
+  administeredDate?: string
+  nextDueDate?: string
+  conditionName?: string
+  onsetDate?: string
+  resolvedDate?: string
+  medicationName?: string
+  dosage?: string
+  instructions?: string
+  startDate?: string
+  endDate?: string
+  reportName?: string
+  reportType?: string
+  reportDate?: string
+  conclusion?: string
 }
 
 export interface NewAllergyInput {
@@ -39,6 +64,44 @@ export interface NewAllergyInput {
   reaction: string
   provider: string
   notes?: string
+}
+
+export interface NewConditionInput {
+  conditionName: string
+  status?: RecordStatus
+  severity?: string
+  onsetDate?: string
+  resolvedDate?: string
+  provider?: string
+  notes?: string
+}
+
+export interface NewMedicationInput {
+  medicationName: string
+  dosage?: string
+  startDate?: string
+  endDate?: string
+  status?: RecordStatus
+  provider?: string
+  instructions?: string
+}
+
+export interface NewVaccinationInput {
+  vaccineName: string
+  doseNumber?: number
+  administeredDate?: string
+  nextDueDate?: string
+  batchNumber?: string
+  provider?: string
+  notes?: string
+}
+
+export interface NewReportInput {
+  reportName: string
+  reportType?: string
+  reportDate?: string
+  conclusion?: string
+  provider?: string
 }
 
 export interface PrescriptionRecord {
@@ -52,7 +115,7 @@ export interface PrescriptionRecord {
   fileType: 'pdf' | 'image'
   fileName: string
   fileSize?: string
-  /** In-memory blob URL for this session only. Never persisted. */
+  /** Authenticated backend URL (/api/v1/documents/doc_.../content) or session blob URL. */
   fileUrl?: string
   instructions?: string
   medications?: {

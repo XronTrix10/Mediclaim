@@ -11,19 +11,35 @@ export interface PendingVerification {
   bloodGroup?: string
   adminVerified: boolean
   registeredAt: string
+  mediclaimId?: string
+  role?: string
 }
 
 export interface VerificationDetail extends PendingVerification {
   mediclaimIdAllocated?: string
+  accountStatus?: string
+  emergencyContact?: {
+    name: string
+    phone: string
+    relation: string
+  }
+  specialization?: string
+  registrationNumber?: string
+  qualification?: string
+  organizationName?: string
 }
 
 export interface AdminStats {
   totalPatients: number
   pendingApprovals: number
+  pendingVerifications?: number
   approvedPatients: number
   totalPractitioners: number
   totalOrganizations: number
+  totalHealthcareOrganizations?: number
   totalEmergencyEvents: number
+  emergencyBreakGlassEvents?: number
+  totalClinicalRecords?: number
 }
 
 export interface GlobalEmergencyEvent {
@@ -41,11 +57,13 @@ export async function getPendingVerifications(params?: {
   limit?: number
   offset?: number
   query?: string
+  status?: 'pending' | 'verified' | 'all'
 }): Promise<PendingVerification[]> {
   const query = new URLSearchParams()
   if (params?.limit) query.set('limit', String(params.limit))
   if (params?.offset) query.set('offset', String(params.offset))
   if (params?.query) query.set('query', params.query)
+  if (params?.status) query.set('status', params.status)
 
   const res = await request<{ status: string; data: PendingVerification[] }>(
     `/admin/verifications?${query.toString()}`
@@ -83,8 +101,20 @@ export async function rejectPatientVerification(userId: string, reason: string):
 }
 
 export async function getAdminStats(): Promise<AdminStats> {
-  const res = await request<{ status: string; data: AdminStats }>('/admin/stats')
-  return res.data
+  const res = await request<{ status: string; data: any }>('/admin/stats')
+  const d = res.data || {}
+  return {
+    totalPatients: d.totalPatients ?? 0,
+    pendingApprovals: d.pendingApprovals ?? d.pendingVerifications ?? 0,
+    pendingVerifications: d.pendingVerifications ?? d.pendingApprovals ?? 0,
+    approvedPatients: d.approvedPatients ?? 0,
+    totalPractitioners: d.totalPractitioners ?? 0,
+    totalOrganizations: d.totalOrganizations ?? d.totalHealthcareOrganizations ?? 0,
+    totalHealthcareOrganizations: d.totalHealthcareOrganizations ?? d.totalOrganizations ?? 0,
+    totalEmergencyEvents: d.totalEmergencyEvents ?? d.emergencyBreakGlassEvents ?? 0,
+    emergencyBreakGlassEvents: d.emergencyBreakGlassEvents ?? d.totalEmergencyEvents ?? 0,
+    totalClinicalRecords: d.totalClinicalRecords ?? 0,
+  }
 }
 
 export async function getAllPatients(params?: {

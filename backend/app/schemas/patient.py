@@ -7,8 +7,9 @@ BloodGroupType = Literal["A+", "A-", "B+", "B-", "AB+", "AB-", "O+", "O-", "Unkn
 EmergencyRelationType = Literal["Parent", "Spouse", "Sibling", "Child", "Friend", "Guardian", "Other"]
 
 class EmergencyContact(BaseModel):
+    model_config = ConfigDict(extra="ignore")
     name: str = Field(min_length=1, max_length=200)
-    phone: str = Field(pattern=r"^\+[1-9]\d{7,14}$|^[\d\s\-\(\)\+]{7,20}$")
+    phone: str = Field(min_length=3, max_length=30)
     relation: str = Field(min_length=1, max_length=50)
 
 class PatientProfileData(BaseModel):
@@ -34,13 +35,13 @@ class PatientProfileResponse(BaseModel):
     meta: Optional[EnvelopeMeta] = None
 
 class CompleteProfileRequest(BaseModel):
-    model_config = ConfigDict(extra="forbid")
-    gender: GenderType
-    bloodGroup: BloodGroupType
-    address: str = Field(min_length=5, max_length=500)
-    emergencyName: str = Field(min_length=2, max_length=200)
-    emergencyPhone: str = Field(min_length=7, max_length=20)
-    emergencyRelation: str = Field(min_length=2, max_length=50)
+    model_config = ConfigDict(extra="ignore")
+    gender: str = Field(min_length=1, max_length=50)
+    bloodGroup: str = Field(min_length=1, max_length=20)
+    address: str = Field(min_length=1, max_length=500)
+    emergencyName: str = Field(min_length=1, max_length=200)
+    emergencyPhone: str = Field(min_length=3, max_length=30)
+    emergencyRelation: str = Field(min_length=1, max_length=50)
 
 class CompleteProfileData(BaseModel):
     isProfileComplete: bool
@@ -53,9 +54,9 @@ class CompleteProfileResponse(BaseModel):
     meta: Optional[EnvelopeMeta] = None
 
 class PermittedDetailsUpdateRequest(BaseModel):
-    model_config = ConfigDict(extra="forbid")
-    phone: Optional[str] = Field(default=None, pattern=r"^\+[1-9]\d{7,14}$|^[\d\s\-\(\)\+]{7,20}$")
-    address: Optional[str] = Field(default=None, min_length=5, max_length=500)
+    model_config = ConfigDict(extra="ignore")
+    phone: Optional[str] = Field(default=None, max_length=30)
+    address: Optional[str] = Field(default=None, max_length=500)
     emergencyContact: Optional[EmergencyContact] = None
 
 class PermittedDetailsUpdateResponse(BaseModel):

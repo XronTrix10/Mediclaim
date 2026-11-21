@@ -1,16 +1,31 @@
 from datetime import datetime, timezone, timedelta
+import logging
 import secrets
+import time
 import uuid
 from typing import Any, Dict, List, Optional
 from fastapi import status
+from app.config import OTP_SECONDS, OTP_DEBUG, ACCESS_TOKEN_SECONDS
 from app.database import get_db
 from app.exceptions import APIProblemException
-from app.security import AuthenticatedUser, format_mediclaim_id, normalize_mediclaim_id
+from app.security import (
+    AuthenticatedUser, format_mediclaim_id, normalize_mediclaim_id,
+    hash_password, verify_password, generate_otp, hash_otp, verify_otp,
+    generate_mediclaim_id, create_access_token
+)
 from app.services.audit_service import record_audit
 from app.schemas.records import KindType, MedicationItem
 
+logger = logging.getLogger("mediclaim.doctor")
+
 def _now_utc() -> datetime:
     return datetime.now(timezone.utc)
+
+def _mask_phone(phone: str) -> str:
+    clean = phone.strip()
+    if len(clean) >= 8:
+        return f"{clean[:3]} XXXXX {clean[-5:]}"
+    return clean
 
 def _format_iso(dt: Optional[datetime]) -> str:
     if not dt:
@@ -63,21 +78,37 @@ def list_doctor_patients(doctor_user: AuthenticatedUser) -> List[Dict[str, Any]]
     raw_doc_id = doctor_user.raw_uuid
 
     with get_db() as conn:
-        rows = conn.execute("""
+        if doctor_user.has_role("admin"):
+            where_clause = "g.status = 'active' AND g.expires_at >= %s"
+            params: List[Any] = [now]
+        elif doctor_user.has_role("hospital_admin", "organization"):
+            where_clause = """
+                (g.organization_id IN (SELECT organization_id FROM organization_memberships WHERE user_id = %s AND is_active = true)
+                 OR g.grantee_user_id = %s)
+                AND g.status = 'active' AND g.expires_at >= %s
+            """
+            params = [raw_doc_id, raw_doc_id, now]
+        else:
+            where_clause = """
+                (g.grantee_user_id = %s
+                 OR g.organization_id IN (SELECT organization_id FROM organization_memberships WHERE user_id = %s AND is_active = true))
+                AND g.status = 'active' AND g.expires_at >= %s
+            """
+            params = [raw_doc_id, raw_doc_id, now]
+
+        rows = conn.execute(f"""
             SELECT g.id AS grant_id, g.expires_at,
                    p.id AS patient_profile_id, p.date_of_birth, p.gender, p.blood_group,
                    u.mediclaim_id, u.full_name,
-                   COALESCE(array_agg(s.record_type) FILTER (WHERE s.record_type IS NOT NULL), '{}') AS scopes
+                   COALESCE(array_agg(s.record_type) FILTER (WHERE s.record_type IS NOT NULL), '{{}}') AS scopes
             FROM patient_access_grants g
             JOIN patient_profiles p ON p.id = g.patient_id
             JOIN users u ON u.id = p.user_id
             LEFT JOIN access_grant_scopes s ON s.access_grant_id = g.id
-            WHERE g.grantee_user_id = %s
-              AND g.status = 'active'
-              AND g.expires_at >= %s
+            WHERE {where_clause}
             GROUP BY g.id, g.expires_at, p.id, p.date_of_birth, p.gender, p.blood_group, u.mediclaim_id, u.full_name
             ORDER BY g.expires_at DESC
-        """, (raw_doc_id, now)).fetchall()
+        """, tuple(params)).fetchall()
 
     result = []
     for r in rows:
@@ -97,17 +128,27 @@ def list_doctor_patients(doctor_user: AuthenticatedUser) -> List[Dict[str, Any]]
 
 def list_doctor_requests(doctor_user: AuthenticatedUser, status_filter: Optional[str] = None) -> List[Dict[str, Any]]:
     raw_doc_id = doctor_user.raw_uuid
-    sql = """
+    params: List[Any] = []
+
+    if doctor_user.has_role("admin"):
+        where_clause = "1=1"
+    elif doctor_user.has_role("hospital_admin", "organization"):
+        where_clause = "(g.organization_id IN (SELECT organization_id FROM organization_memberships WHERE user_id = %s AND is_active = true) OR g.grantee_user_id = %s)"
+        params.extend([raw_doc_id, raw_doc_id])
+    else:
+        where_clause = "g.grantee_user_id = %s"
+        params.append(raw_doc_id)
+
+    sql = f"""
         SELECT g.id, g.status, g.duration_hours, g.purpose, g.created_at, g.expires_at,
                u.mediclaim_id, u.full_name,
-               COALESCE(array_agg(s.record_type) FILTER (WHERE s.record_type IS NOT NULL), '{}') AS scopes
+               COALESCE(array_agg(s.record_type) FILTER (WHERE s.record_type IS NOT NULL), '{{}}') AS scopes
         FROM patient_access_grants g
         JOIN patient_profiles p ON p.id = g.patient_id
         JOIN users u ON u.id = p.user_id
         LEFT JOIN access_grant_scopes s ON s.access_grant_id = g.id
-        WHERE g.grantee_user_id = %s
+        WHERE {where_clause}
     """
-    params: List[Any] = [raw_doc_id]
 
     if status_filter and status_filter.lower() != "all":
         sql += " AND g.status = %s"
@@ -166,11 +207,14 @@ def _verify_doctor_consent_and_scope(
                    COALESCE(array_agg(s.record_type) FILTER (WHERE s.record_type IS NOT NULL), '{}') AS scopes
             FROM patient_access_grants g
             LEFT JOIN access_grant_scopes s ON s.access_grant_id = g.id
-            WHERE g.patient_id = %s AND g.grantee_user_id = %s
+            WHERE g.patient_id = %s
+              AND (g.grantee_user_id = %s OR g.organization_id IN (
+                  SELECT organization_id FROM organization_memberships WHERE user_id = %s AND is_active = true
+              ))
             GROUP BY g.id, g.status, g.expires_at, g.organization_id
             ORDER BY g.created_at DESC
             LIMIT 1
-        """, (pat_profile_id, raw_doc_id)).fetchone()
+        """, (pat_profile_id, raw_doc_id, raw_doc_id)).fetchone()
 
         # If not found directly, check active_grant_id from doctor token if present
         if not grant and doctor_user.active_grant_id:
@@ -184,6 +228,16 @@ def _verify_doctor_consent_and_scope(
                 GROUP BY g.id, g.status, g.expires_at, g.organization_id
                 LIMIT 1
             """, (raw_grt, pat_profile_id)).fetchone()
+
+        # System administrator bypass
+        if not grant and doctor_user.has_role("admin"):
+            grant = {
+                "id": str(uuid.uuid4()),
+                "status": "active",
+                "expires_at": now + timedelta(days=365),
+                "organization_id": None,
+                "scopes": ["all", "allergy", "condition", "medication", "vaccination", "report"],
+            }
 
         if not grant:
             raise APIProblemException(
@@ -588,4 +642,335 @@ def record_vaccination(
         "status": "completed",
         "provider": doctor_user.full_name,
         "fhirId": f"Immunization/imm-{str(rec_uuid)[:8]}",
+    }
+
+
+def register_doctor(payload) -> Dict[str, Any]:
+    with get_db() as conn:
+        clean_phone = payload.phone.strip()
+        clean_aadhaar = payload.aadhaarNumber.replace(" ", "").strip()
+
+        # Check phone and aadhaar uniqueness
+        dup = conn.execute(
+            "SELECT phone, aadhaar_number FROM users WHERE phone = %s OR aadhaar_number = %s",
+            (clean_phone, clean_aadhaar)
+        ).fetchone()
+        if dup:
+            raise APIProblemException(
+                status_code=status.HTTP_409_CONFLICT,
+                title="Account Already Exists",
+                detail="An account with this phone number or Aadhaar number already exists.",
+                code="ACCOUNT_ALREADY_EXISTS",
+            )
+
+        # Check medical license uniqueness
+        lic_dup = conn.execute(
+            "SELECT id FROM practitioner_profiles WHERE registration_number = %s",
+            (payload.medicalLicenseNumber.strip(),)
+        ).fetchone()
+        if lic_dup:
+            raise APIProblemException(
+                status_code=status.HTTP_409_CONFLICT,
+                title="License Already Registered",
+                detail=f"Medical license number '{payload.medicalLicenseNumber}' is already registered.",
+                code="RECORD_CONFLICT",
+            )
+
+        # Allocate unique Mediclaim ID
+        for _ in range(50):
+            candidate = generate_mediclaim_id()
+            exists = conn.execute(
+                "SELECT 1 FROM users WHERE mediclaim_id = %s OR public_id = %s",
+                (candidate, candidate)
+            ).fetchone()
+            if not exists:
+                med_id = candidate
+                break
+        else:
+            med_id = secrets.token_hex(6)[:12]
+
+        user_uuid = uuid.uuid4()
+        user_id_str = str(user_uuid)
+        pub_id = secrets.token_hex(6)[:12]
+
+        # Insert user (admin_verified=false per administrative verification workflow)
+        conn.execute("""
+            INSERT INTO users (
+                id, public_id, mediclaim_id, full_name, phone, aadhaar_number,
+                password_hash, admin_verified, profile_complete, is_active,
+                created_at, updated_at
+            ) VALUES (
+                %s, %s, %s, %s, %s, %s,
+                %s, false, true, true,
+                now(), now()
+            )
+        """, (
+            user_id_str, pub_id, med_id, payload.fullName.strip(),
+            clean_phone, clean_aadhaar,
+            hash_password(payload.password)
+        ))
+
+        # Insert role in user_roles
+        conn.execute("""
+            INSERT INTO user_roles (user_id, role)
+            VALUES (%s, 'practitioner')
+            ON CONFLICT (user_id, role) DO NOTHING
+        """, (user_id_str,))
+
+        # Insert practitioner profile
+        doc_prof_uuid = uuid.uuid4()
+        qual = f"{payload.yearsOfExperience} yrs exp" if payload.yearsOfExperience else "MBBS"
+        conn.execute("""
+            INSERT INTO practitioner_profiles (
+                id, public_id, user_id, registration_number, specialization,
+                qualification, created_at
+            ) VALUES (
+                %s, %s, %s, %s, %s,
+                %s, now()
+            )
+        """, (
+            str(doc_prof_uuid), secrets.token_hex(6)[:12], user_id_str,
+            payload.medicalLicenseNumber.strip(), payload.specialization.strip(),
+            qual
+        ))
+
+        # Optional hospital affiliation
+        if payload.hospitalName and payload.hospitalName.strip():
+            h_name = payload.hospitalName.strip()
+            org = conn.execute(
+                "SELECT id FROM healthcare_organizations WHERE name ILIKE %s LIMIT 1",
+                (h_name,)
+            ).fetchone()
+            if not org:
+                org_uuid = uuid.uuid4()
+                org_pub = secrets.token_hex(6)[:12]
+                conn.execute("""
+                    INSERT INTO healthcare_organizations (
+                        id, public_id, name, organization_type, created_at
+                    ) VALUES (%s, %s, %s, 'hospital', now())
+                """, (str(org_uuid), org_pub, h_name))
+                org_id = str(org_uuid)
+            else:
+                org_id = str(org["id"])
+
+            conn.execute("""
+                INSERT INTO organization_memberships (
+                    organization_id, user_id, designation, is_active, created_at
+                ) VALUES (%s, %s, 'Consultant', true, now())
+                ON CONFLICT (organization_id, user_id) DO NOTHING
+            """, (org_id, user_id_str))
+
+    return {
+        "userId": f"usr_{user_uuid}",
+        "phone": clean_phone,
+        "accountStatus": "pending_admin_approval",
+        "otpSent": False,
+        "otpExpiresInSeconds": OTP_SECONDS,
+        "debugOtp": None,
+    }
+
+
+def doctor_request_otp(payload) -> Dict[str, Any]:
+    now = int(time.time())
+    otp = generate_otp()
+    clean_phone = payload.phone.strip()
+    alt_phone = f"+91{clean_phone.replace('+91', '').strip()}"
+
+    with get_db() as conn:
+        user = conn.execute("""
+            SELECT u.id, u.phone, u.full_name, u.admin_verified
+            FROM users u
+            JOIN user_roles ur ON ur.user_id = u.id
+            WHERE (u.phone = %s OR u.phone = %s)
+              AND ur.role IN ('practitioner', 'doctor')
+            LIMIT 1
+        """, (clean_phone, alt_phone)).fetchone()
+
+        if not user:
+            raise APIProblemException(
+                status_code=status.HTTP_401_UNAUTHORIZED,
+                title="Account Not Found",
+                detail="No practitioner account found for this mobile number.",
+                code="INVALID_CREDENTIALS",
+            )
+
+        conn.execute("""
+            UPDATE users
+            SET otp_hash = %s, otp_expires_at = %s, otp_attempts = 0, updated_at = now()
+            WHERE id = %s
+        """, (hash_otp(otp), now + OTP_SECONDS, str(user["id"])))
+
+    if OTP_DEBUG:
+        logger.info("[DEV ONLY] Doctor Login OTP for %s: %s", user["phone"], otp)
+        print(f"[DEV ONLY] Doctor Login OTP for {user['phone']}: {otp}")
+
+    return {
+        "maskedPhone": _mask_phone(user["phone"]),
+        "otpExpiresInSeconds": OTP_SECONDS,
+        "debugOtp": otp if OTP_DEBUG else None,
+    }
+
+
+def doctor_verify_otp(payload) -> Dict[str, Any]:
+    now = int(time.time())
+    clean_phone = payload.phone.strip()
+    alt_phone = f"+91{clean_phone.replace('+91', '').strip()}"
+
+    with get_db() as conn:
+        user = conn.execute("""
+            SELECT u.*
+            FROM users u
+            JOIN user_roles ur ON ur.user_id = u.id
+            WHERE (u.phone = %s OR u.phone = %s)
+              AND ur.role IN ('practitioner', 'doctor')
+            LIMIT 1
+        """, (clean_phone, alt_phone)).fetchone()
+
+        if not user:
+            raise APIProblemException(
+                status_code=status.HTTP_401_UNAUTHORIZED,
+                title="Account Not Found",
+                detail="No practitioner account found for this mobile number.",
+                code="INVALID_CREDENTIALS",
+            )
+
+        if not user["otp_hash"] or not user["otp_expires_at"] or now > user["otp_expires_at"]:
+            raise APIProblemException(
+                status_code=status.HTTP_400_BAD_REQUEST,
+                title="OTP Expired",
+                detail="Login verification code has expired. Please request a new one.",
+                code="OTP_EXPIRED",
+            )
+
+        if user["otp_attempts"] >= 5:
+            raise APIProblemException(
+                status_code=status.HTTP_429_TOO_MANY_REQUESTS,
+                title="Rate Limit Exceeded",
+                detail="Too many incorrect login attempts. Please request a fresh OTP.",
+                code="RATE_LIMIT_EXCEEDED",
+            )
+
+        if not verify_otp(payload.otp, user["otp_hash"]):
+            conn.execute(
+                "UPDATE users SET otp_attempts = otp_attempts + 1, updated_at = now() WHERE id = %s",
+                (str(user["id"]),)
+            )
+            raise APIProblemException(
+                status_code=status.HTTP_401_UNAUTHORIZED,
+                title="Invalid OTP",
+                detail="The one-time verification code is incorrect.",
+                code="INVALID_CREDENTIALS",
+            )
+
+        # Clear used OTP
+        conn.execute(
+            "UPDATE users SET otp_hash = NULL, otp_expires_at = NULL, otp_attempts = 0, updated_at = now() WHERE id = %s",
+            (str(user["id"]),)
+        )
+
+    if not user.get("admin_verified"):
+        raise APIProblemException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            title="Account Pending Verification",
+            detail="Your practitioner account is awaiting verification by an administrator.",
+            code="ACCOUNT_PENDING_APPROVAL",
+        )
+
+    formatted_user_id = f"usr_{user['id']}"
+    token = create_access_token(formatted_user_id, role="practitioner")
+
+    return {
+        "accessToken": token,
+        "tokenType": "Bearer",
+        "expiresIn": ACCESS_TOKEN_SECONDS,
+        "user": {
+            "id": formatted_user_id,
+            "fullName": user["full_name"],
+            "email": user.get("email"),
+            "phone": user["phone"],
+            "role": "practitioner",
+            "mediclaimId": format_mediclaim_id(user.get("mediclaim_id") or ""),
+            "isActive": bool(user["is_active"]),
+            "adminVerified": bool(user["admin_verified"]),
+            "isProfileComplete": bool(user["profile_complete"]),
+        }
+    }
+
+
+def doctor_login(payload) -> Dict[str, Any]:
+    if payload.otp and payload.phone:
+        return doctor_verify_otp(payload)
+
+    with get_db() as conn:
+        if payload.phone:
+            clean_p = payload.phone.strip()
+            alt_p = f"+91{clean_p.replace('+91', '').strip()}"
+            clause = "(u.phone = %s OR u.phone = %s)"
+            query_params: tuple = (clean_p, alt_p)
+        elif payload.email:
+            clause = "u.email ILIKE %s"
+            query_params = (payload.email.strip(),)
+        elif payload.mediclaimId:
+            clean_m = normalize_mediclaim_id(payload.mediclaimId)
+            clause = "(u.mediclaim_id = %s OR u.public_id = %s)"
+            query_params = (clean_m, clean_m)
+        else:
+            raise APIProblemException(
+                status_code=status.HTTP_400_BAD_REQUEST,
+                title="Missing Identifier",
+                detail="Phone number, email, or Mediclaim ID is required.",
+                code="BAD_REQUEST",
+            )
+
+        user = conn.execute(f"""
+            SELECT u.*
+            FROM users u
+            JOIN user_roles ur ON ur.user_id = u.id
+            WHERE {clause}
+              AND ur.role IN ('practitioner', 'doctor')
+            LIMIT 1
+        """, query_params).fetchone()
+
+        if not user:
+            raise APIProblemException(
+                status_code=status.HTTP_401_UNAUTHORIZED,
+                title="Invalid Credentials",
+                detail="Invalid practitioner credentials.",
+                code="INVALID_CREDENTIALS",
+            )
+
+        if not payload.password or not verify_password(payload.password, user["password_hash"]):
+            raise APIProblemException(
+                status_code=status.HTTP_401_UNAUTHORIZED,
+                title="Invalid Credentials",
+                detail="Invalid practitioner password.",
+                code="INVALID_CREDENTIALS",
+            )
+
+    if not user.get("admin_verified"):
+        raise APIProblemException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            title="Account Pending Verification",
+            detail="Your practitioner account is awaiting verification by an administrator.",
+            code="ACCOUNT_PENDING_APPROVAL",
+        )
+
+    formatted_user_id = f"usr_{user['id']}"
+    token = create_access_token(formatted_user_id, role="practitioner")
+
+    return {
+        "accessToken": token,
+        "tokenType": "Bearer",
+        "expiresIn": ACCESS_TOKEN_SECONDS,
+        "user": {
+            "id": formatted_user_id,
+            "fullName": user["full_name"],
+            "email": user.get("email"),
+            "phone": user["phone"],
+            "role": "practitioner",
+            "mediclaimId": format_mediclaim_id(user.get("mediclaim_id") or ""),
+            "isActive": bool(user["is_active"]),
+            "adminVerified": bool(user["admin_verified"]),
+            "isProfileComplete": bool(user["profile_complete"]),
+        }
     }

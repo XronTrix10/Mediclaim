@@ -32,6 +32,7 @@ import {
   auditApi,
   correctionsApi,
 } from '../api'
+import { getStoredUser, setStoredUser } from '../api/client'
 
 const STORAGE_KEY = 'mediclaim:v2'
 const LEGACY = {
@@ -81,11 +82,37 @@ function serialize(state: HealthState): HealthState {
 
 function loadInitial(): HealthState {
   const now = Date.now()
+  const curUser = getStoredUser()
   const saved = readJSON<HealthState>(STORAGE_KEY)
-  if (saved?.profile) return { ...seedState(now), ...saved }
 
-  // One-time import from the first version of the dashboard, which used separate keys.
+  // If saved state matches the authenticated user, restore it
+  if (saved?.profile) {
+    const isSameUser = !curUser ||
+      saved.profile.userId === curUser.id ||
+      saved.profile.mediclaimId?.replace(/\s/g, '') === curUser.mediclaimId?.replace(/\s/g, '')
+
+    if (isSameUser) {
+      if (curUser?.isProfileComplete) {
+        saved.profile.isProfileComplete = true
+      }
+      return { ...seedState(now), ...saved }
+    }
+  }
+
+  // Fresh state for the current authenticated user
   const state = seedState(now)
+  if (curUser) {
+    state.profile = {
+      ...state.profile,
+      userId: curUser.id,
+      fullName: curUser.fullName,
+      firstName: curUser.fullName.split(' ')[0],
+      phone: curUser.phone,
+      mediclaimId: curUser.mediclaimId || state.profile.mediclaimId,
+      isProfileComplete: Boolean(curUser.isProfileComplete),
+    }
+    return state
+  }
   const legacyProfile = readJSON<HealthState['profile']>(LEGACY.patient)
   const legacyRx = readJSON<PrescriptionRecord[]>(LEGACY.prescriptions)
   const legacyAllergies = readJSON<
@@ -133,6 +160,7 @@ type Action =
   | { type: 'profile/complete'; payload: ProfileCompletionPayload; now: number }
   | { type: 'profile/update'; update: PermittedPersonalDetailsUpdate; now: number }
   | { type: 'allergy/add'; input: NewAllergyInput; id: string; now: number }
+  | { type: 'event/add'; event: HealthEvent; now: number }
   | { type: 'rx/add'; rx: PrescriptionRecord; now: number }
   | { type: 'rx/remove'; id: string }
   | { type: 'sample/toggle' }
@@ -208,6 +236,14 @@ function reducer(state: HealthState, action: Action): HealthState {
         ...state,
         ownEvents: [event, ...state.ownEvents],
         audit: log(state, action.now, 'You', `recorded an allergy to ${event.title}`, 'upload'),
+      }
+    }
+    case 'event/add': {
+      const existing = state.ownEvents.filter((e) => e.id !== action.event.id)
+      return {
+        ...state,
+        ownEvents: [action.event, ...existing],
+        audit: log(state, action.now, 'You', `recorded ${action.event.title}`, 'upload'),
       }
     }
     case 'rx/add':
@@ -321,7 +357,40 @@ function toPrescriptionEvent(rx: PrescriptionRecord): HealthEvent {
     prescriptionId: rx.id,
     fileType: rx.fileType,
     fileName: rx.fileName,
+    fileUrl: rx.fileUrl,
   }
+}
+
+export function isBirthRecordCandidate(event: HealthEvent, dob?: string): boolean {
+  if (!dob) return false
+  const eventDate = (event.date || '').slice(0, 10)
+  const birthDate = dob.slice(0, 10)
+  // Must strictly match the birth date
+  if (eventDate !== birthDate) return false
+
+  if (event.isBirthRecord) return true
+  if (event.id === 'birth-record-anchor' || event.id === 'birth-milestone-anchor') return true
+
+  const title = (event.title || '').toLowerCase()
+  const detail = (event.detail || '').toLowerCase()
+  const reportType = (event.reportType || '').toLowerCase()
+  const fileName = (event.fileName || '').toLowerCase()
+
+  const isBirthKeyword =
+    title.includes('birth') ||
+    title.includes('delivery') ||
+    title.includes('maternity') ||
+    title.includes('newborn') ||
+    title.includes('neonatal') ||
+    reportType.includes('birth') ||
+    fileName.includes('birth') ||
+    detail.includes('birth weight') ||
+    detail.includes('born')
+
+  if (isBirthKeyword) return true
+  if (event.kind === 'report') return true
+
+  return false
 }
 
 export default function HealthDataProvider({ children }: { children: ReactNode }) {
@@ -382,6 +451,7 @@ export default function HealthDataProvider({ children }: { children: ReactNode }
               phone: '',
               relation: 'Parent',
             },
+            isProfileComplete: Boolean(p.isProfileComplete),
           }
         }
 
@@ -442,33 +512,60 @@ export default function HealthDataProvider({ children }: { children: ReactNode }
 
   const actions = useMemo<HealthActions>(
     () => ({
-      completeProfile: async (payload) => {
-        dispatch({ type: 'profile/complete', payload, now: Date.now() })
-        if (authApi.isAuthenticated()) {
-          try {
-            const updated = await patientApi.completeProfile(payload)
-            dispatch({
-              type: 'profile/hydrated',
-              profile: {
-                ...updated,
-                gender: (updated.gender || '') as Gender,
-                bloodGroup: (updated.bloodGroup || '') as BloodGroup,
-                address: updated.address || '',
-                emergencyContact: updated.emergencyContact || {
-                  name: payload.emergencyName,
-                  phone: payload.emergencyPhone,
-                  relation: payload.emergencyRelation,
-                },
-              },
-            })
-          } catch (e) {
-            console.warn('Backend complete profile sync failed:', e)
+      refreshData: async () => {
+        if (!authApi.isAuthenticated()) return
+        try {
+          const [recordsRes, prescriptionsRes, auditRes] = await Promise.allSettled([
+            recordsApi.getRecords(),
+            recordsApi.getPrescriptions(),
+            auditApi.getAuditLogs(),
+          ])
+          const patch: Partial<HealthState> = {}
+          if (recordsRes.status === 'fulfilled' && recordsRes.value) {
+            patch.ownEvents = recordsRes.value
           }
+          if (prescriptionsRes.status === 'fulfilled' && prescriptionsRes.value) {
+            patch.prescriptions = prescriptionsRes.value
+          }
+          if (auditRes.status === 'fulfilled' && auditRes.value && auditRes.value.length > 0) {
+            patch.audit = auditRes.value
+          }
+          if (Object.keys(patch).length > 0) {
+            dispatch({ type: 'state/hydrated', payload: patch })
+          }
+        } catch {
+          // Ignore transient refresh failures
+        }
+      },
+
+      completeProfile: async (payload) => {
+        if (authApi.isAuthenticated()) {
+          const updated = await patientApi.completeProfile(payload)
+          dispatch({
+            type: 'profile/hydrated',
+            profile: {
+              ...updated,
+              gender: (updated.gender || payload.gender) as Gender,
+              bloodGroup: (updated.bloodGroup || payload.bloodGroup) as BloodGroup,
+              address: updated.address || payload.address,
+              emergencyContact: updated.emergencyContact || {
+                name: payload.emergencyName,
+                phone: payload.emergencyPhone,
+                relation: payload.emergencyRelation,
+              },
+              isProfileComplete: true,
+            },
+          })
+          const curUser = authApi.getCurrentUser()
+          if (curUser) {
+            setStoredUser({ ...curUser, isProfileComplete: true })
+          }
+        } else {
+          dispatch({ type: 'profile/complete', payload, now: Date.now() })
         }
       },
 
       updatePermittedDetails: async (update) => {
-        dispatch({ type: 'profile/update', update, now: Date.now() })
         if (authApi.isAuthenticated()) {
           try {
             const updated = await patientApi.updatePermittedDetails(update)
@@ -478,30 +575,171 @@ export default function HealthDataProvider({ children }: { children: ReactNode }
                 ...updated,
                 gender: (updated.gender || '') as Gender,
                 bloodGroup: (updated.bloodGroup || '') as BloodGroup,
-                address: updated.address || '',
-                emergencyContact: updated.emergencyContact || {
+                address: updated.address || (update.address ?? ''),
+                emergencyContact: updated.emergencyContact || update.emergencyContact || {
                   name: '',
                   phone: '',
                   relation: 'Parent',
                 },
+                isProfileComplete: updated.isProfileComplete ?? true,
               },
             })
           } catch (e) {
             console.warn('Backend update permitted details sync failed:', e)
+            dispatch({ type: 'profile/update', update, now: Date.now() })
           }
+        } else {
+          dispatch({ type: 'profile/update', update, now: Date.now() })
         }
       },
 
       addAllergy: async (input) => {
-        const eventId = uid('alg')
-        dispatch({ type: 'allergy/add', input, id: eventId, now: Date.now() })
+        const now = Date.now()
+        let event: HealthEvent = {
+          id: uid('alg'),
+          kind: 'allergy',
+          title: input.allergen.trim(),
+          detail: input.notes?.trim() || input.reaction.trim(),
+          date: todayISO(new Date(now)),
+          provider: input.provider?.trim() || 'Self-reported',
+          status: 'active',
+          source: 'self_reported',
+          category: input.category,
+          severity: input.severity,
+          criticality: input.criticality,
+          reaction: input.reaction.trim(),
+          notes: input.notes?.trim() || undefined,
+        }
         if (authApi.isAuthenticated()) {
           try {
-            await recordsApi.addAllergy(input)
+            const saved = await recordsApi.addAllergy(input)
+            if (saved && saved.id) event = saved
           } catch (e) {
             console.warn('Backend add allergy sync failed:', e)
           }
         }
+        dispatch({ type: 'event/add', event, now })
+        return event
+      },
+
+      addVaccination: async (input) => {
+        const now = Date.now()
+        let event: HealthEvent = {
+          id: uid('vac'),
+          kind: 'vaccination',
+          title: input.vaccineName.trim(),
+          detail: input.notes?.trim() || `Dose ${input.doseNumber || 1}`,
+          date: input.administeredDate || todayISO(new Date(now)),
+          provider: input.provider?.trim() || 'Self-reported',
+          status: 'completed',
+          source: 'self_reported',
+          vaccineName: input.vaccineName.trim(),
+          doseNumber: input.doseNumber || 1,
+          batchNumber: input.batchNumber?.trim(),
+          administeredDate: input.administeredDate || todayISO(new Date(now)),
+          nextDueDate: input.nextDueDate,
+          notes: input.notes?.trim(),
+        }
+        if (authApi.isAuthenticated()) {
+          try {
+            const saved = await recordsApi.addVaccination(input)
+            if (saved && saved.id) event = saved
+          } catch (e) {
+            console.warn('Backend add vaccination sync failed:', e)
+          }
+        }
+        dispatch({ type: 'event/add', event, now })
+        return event
+      },
+
+      addCondition: async (input) => {
+        const now = Date.now()
+        let event: HealthEvent = {
+          id: uid('cond'),
+          kind: 'condition',
+          title: input.conditionName.trim(),
+          detail: input.notes?.trim() || `${input.severity || 'Active'} ${input.conditionName.trim()}`,
+          date: input.onsetDate || todayISO(new Date(now)),
+          provider: input.provider?.trim() || 'Self-reported',
+          status: input.status || 'active',
+          source: 'self_reported',
+          conditionName: input.conditionName.trim(),
+          onsetDate: input.onsetDate || todayISO(new Date(now)),
+          resolvedDate: input.resolvedDate,
+          notes: input.notes?.trim(),
+        }
+        if (authApi.isAuthenticated()) {
+          try {
+            const saved = await recordsApi.addCondition(input)
+            if (saved && saved.id) event = saved
+          } catch (e) {
+            console.warn('Backend add condition sync failed:', e)
+          }
+        }
+        dispatch({ type: 'event/add', event, now })
+        return event
+      },
+
+      addMedication: async (input) => {
+        const now = Date.now()
+        const detailParts: string[] = []
+        if (input.dosage) detailParts.push(input.dosage.trim())
+        if (input.instructions) detailParts.push(input.instructions.trim())
+        const detail = detailParts.join('. ') || input.medicationName.trim()
+
+        let event: HealthEvent = {
+          id: uid('med'),
+          kind: 'medication',
+          title: input.medicationName.trim(),
+          detail,
+          date: input.startDate || todayISO(new Date(now)),
+          provider: input.provider?.trim() || 'Self-reported',
+          status: input.status || 'active',
+          source: 'self_reported',
+          medicationName: input.medicationName.trim(),
+          dosage: input.dosage?.trim(),
+          instructions: input.instructions?.trim(),
+          startDate: input.startDate || todayISO(new Date(now)),
+          endDate: input.endDate,
+        }
+        if (authApi.isAuthenticated()) {
+          try {
+            const saved = await recordsApi.addMedication(input)
+            if (saved && saved.id) event = saved
+          } catch (e) {
+            console.warn('Backend add medication sync failed:', e)
+          }
+        }
+        dispatch({ type: 'event/add', event, now })
+        return event
+      },
+
+      addReport: async (input) => {
+        const now = Date.now()
+        let event: HealthEvent = {
+          id: uid('rep'),
+          kind: 'report',
+          title: input.reportName.trim(),
+          detail: input.conclusion?.trim() || `${input.reportType || 'Diagnostic'} report`,
+          date: input.reportDate || todayISO(new Date(now)),
+          provider: input.provider?.trim() || 'Diagnostic Centre',
+          status: 'completed',
+          source: 'self_reported',
+          reportName: input.reportName.trim(),
+          reportType: input.reportType || 'lab',
+          conclusion: input.conclusion?.trim(),
+          reportDate: input.reportDate || todayISO(new Date(now)),
+        }
+        if (authApi.isAuthenticated()) {
+          try {
+            const saved = await recordsApi.addReport(input)
+            if (saved && saved.id) event = saved
+          } catch (e) {
+            console.warn('Backend add report sync failed:', e)
+          }
+        }
+        dispatch({ type: 'event/add', event, now })
+        return event
       },
 
       addPrescription: async (rx) => {
@@ -623,11 +861,96 @@ export default function HealthDataProvider({ children }: { children: ReactNode }
   )
 
   const value = useMemo<HealthContextValue>(() => {
-    const events = [
+    const ownKeys = new Set(
+      state.ownEvents.map((e) => `${e.kind}|${e.title.trim().toLowerCase()}|${e.date}`),
+    )
+    const uniqueRxEvents = state.prescriptions
+      .map(toPrescriptionEvent)
+      .filter((rxEv) => !ownKeys.has(`${rxEv.kind}|${rxEv.title.trim().toLowerCase()}|${rxEv.date}`))
+
+    const rawEvents = [
       ...state.ownEvents,
-      ...state.prescriptions.map(toPrescriptionEvent),
+      ...uniqueRxEvents,
       ...(state.sampleLoaded ? sampleEvents : []),
-    ].sort((a, b) => b.date.localeCompare(a.date) || a.id.localeCompare(b.id))
+    ]
+
+    const dob = state.profile?.dateOfBirth?.slice(0, 10)
+    let mergedEvents: HealthEvent[] = []
+
+    if (dob) {
+      const birthMatches: HealthEvent[] = []
+      const otherEvents: HealthEvent[] = []
+
+      for (const e of rawEvents) {
+        if (isBirthRecordCandidate(e, dob)) {
+          birthMatches.push(e)
+        } else {
+          otherEvents.push(e)
+        }
+      }
+
+      if (birthMatches.length > 0) {
+        // Prioritize records with attached files / documents, or uploaded / clinician verified records
+        const primaryRecord =
+          birthMatches.find((e) => Boolean(e.fileUrl || e.documentId || e.prescriptionId)) ||
+          birthMatches.find((e) => e.source === 'uploaded' || e.source === 'practitioner') ||
+          birthMatches[0]
+
+        const hasCert = Boolean(
+          primaryRecord.fileUrl ||
+          primaryRecord.documentId ||
+          primaryRecord.hasCertificate ||
+          primaryRecord.source === 'uploaded' ||
+          primaryRecord.source === 'practitioner' ||
+          (primaryRecord.detail && /birth weight|apgar|hospital|maternity|full-term|delivered/i.test(primaryRecord.detail)),
+        )
+
+        const consolidatedBirthEvent: HealthEvent = {
+          ...primaryRecord,
+          id: primaryRecord.id || 'birth-record-anchor',
+          kind: 'report',
+          title: primaryRecord.title || 'Birth record',
+          short: primaryRecord.short || 'Birth',
+          detail: primaryRecord.detail || 'Birth record and life origin milestone.',
+          date: dob,
+          provider: primaryRecord.provider || 'Civil Registrar / Maternity Hospital',
+          status: primaryRecord.status || 'completed',
+          source: primaryRecord.source || (hasCert ? 'uploaded' : 'self_reported'),
+          isBirthRecord: true,
+          hasCertificate: hasCert,
+          missingRecordHint: hasCert
+            ? undefined
+            : 'Upload your birth certificate, maternity card, or neonatal vaccinations like Hepatitis B (birth dose) and BCG.',
+        }
+
+        mergedEvents = [...otherEvents, consolidatedBirthEvent]
+      } else {
+        // Synthesize anchor birth record from profile.dateOfBirth
+        const anchorBirthEvent: HealthEvent = {
+          id: 'birth-record-anchor',
+          kind: 'report',
+          title: 'Birth record',
+          short: 'Birth',
+          detail: 'Birth and life origin milestone. No official birth certificate attached yet.',
+          date: dob,
+          provider: 'Civil Registrar / Maternity Hospital',
+          status: 'completed',
+          source: 'self_reported',
+          isBirthRecord: true,
+          hasCertificate: false,
+          missingRecordHint:
+            'Upload your birth certificate, maternity card, or neonatal vaccinations like Hepatitis B (birth dose) and BCG.',
+        }
+
+        mergedEvents = [...otherEvents, anchorBirthEvent]
+      }
+    } else {
+      mergedEvents = rawEvents
+    }
+
+    const events = mergedEvents.sort(
+      (a, b) => (b.date || '').localeCompare(a.date || '') || a.id.localeCompare(b.id),
+    )
     return { ...state, events, actions }
   }, [state, actions])
 

@@ -1,108 +1,170 @@
-# Mediclaim Authentication API
+# Mediclaim Backend API & Clinical Engine
 
-FastAPI implementation of **Section 2 (Authentication & Onboarding)** of the supplied `api-contract.md`:
-- `POST /api/v1/auth/register`
-- `POST /api/v1/auth/verify-otp`
-- `POST /api/v1/auth/login`
+> **FastAPI Application Server for HL7 FHIR-Aligned Longitudinal Medical Records**
 
-No patient profile, records, upload, timeline, consent, emergency, audit, or correction endpoints are implemented.
+---
 
-## Run locally
+## Table of Contents
 
-Python 3.12+ recommended.
+1. [Overview & Capabilities](#1-overview--capabilities)
+2. [API Architecture & Module Map](#2-api-architecture--module-map)
+3. [Multimodal AI Document Parser (Gemini 3)](#3-multimodal-ai-document-parser-gemini-3)
+4. [Database Connection Pool & Migrations](#4-database-connection-pool--migrations)
+5. [Local Development Setup](#5-local-development-setup)
+6. [Running with Docker Compose](#6-running-with-docker-compose)
+7. [Running the Test Suite](#7-running-the-test-suite)
+8. [API Documentation & Full Specification](#8-api-documentation--full-specification)
 
+---
+
+## 1. Overview & Capabilities
+
+The Mediclaim backend is built with **Python 3.12+**, **FastAPI**, **Pydantic v2**, and **PostgreSQL 16**. It acts as the secure clinical records engine conforming to HL7 FHIR R4 concepts and strict data sovereignty principles.
+
+### Key Capabilities
+- **Authentication & Life Cycle**: Issues sovereign 12-digit Mediclaim IDs (`mediclaim_id`), verifies mobile phone numbers via 6-digit OTPs, and enforces administrator identity verification before account activation.
+- **Multimodal AI Medical Ingestion**: Uses Google DeepMind's Gemini 3 Flash model to parse handwritten and typed prescriptions, vaccinations, chronic conditions, and diagnostic reports into structured FHIR records.
+- **Birth Milestone Anchoring**: Synthesizes and merges the foundational birth record based on the citizen's registered date of birth.
+- **Granular Consent Middleware**: Real-time evaluation of patient-approved scopes (`allergy`, `condition`, `medication`, `vaccination`, `report`) and automatic session expiration.
+- **Break-Glass Emergency Protocol**: Allows critical care doctors to bypass consent during trauma resuscitations while logging immutable audit events.
+- **Tamper-Evident Audit Logging**: Backed by database-level PostgreSQL triggers that strictly prohibit updates or deletions on audit trails.
+
+---
+
+## 2. API Architecture & Module Map
+
+The API is mounted at `/api/v1` and structured into modular routers:
+
+| Module | Route Prefix | Primary Purpose |
+|---|---|---|
+| **Authentication** | `/api/v1/auth` | Patient registration, OTP verification, login, and token generation |
+| **Patient Profile** | `/api/v1/patients` | Demographics, blood group, address, emergency contact updates |
+| **Clinical Records**| `/api/v1/records` | CRUD for allergies, conditions, medications, vaccines, and diagnostic reports |
+| **Uploads & Storage**| `/api/v1/uploads`, `/documents` | Multimodal AI parsing, status polling, commit, and authenticated file preview |
+| **Timeline & Graph**| `/api/v1/timeline` | Lifelong chronological event stream and node-edge health graph payload |
+| **Consent & Access**| `/api/v1/consent` | Access request submission, OTP authorization, active grants, and caregivers |
+| **Emergency** | `/api/v1/emergency` | Break-glass override execution and emergency session audit feeds |
+| **Audit & Corrections**| `/api/v1/audit`, `/corrections`| Access logs, download history, and patient record amendment workflows |
+| **Admin Portal** | `/api/v1/admin` | User verification lifecycle, patient/doctor directories, and organization management |
+| **Doctor Portal** | `/api/v1/doctor` | Consultation encounters, authorized patient inspection, and clinical orders |
+| **Hospital Portal** | `/api/v1/hospital` | Hospital dashboard, practitioner affiliations, and inpatient rosters |
+
+---
+
+## 3. Multimodal AI Document Parser (Gemini 3)
+
+Located in [`backend/app/services/document_parser.py`](file:///Users/sreejan/Codes/Mediclaim/backend/app/services/document_parser.py).
+
+### Mandatory API Key Check
+To prevent silent runtime extraction failures, the server validates `GEMINI_API_KEY` on startup within [`backend/app/main.py`](file:///Users/sreejan/Codes/Mediclaim/backend/app/main.py):
+- If `GEMINI_API_KEY` is missing or empty, the application immediately throws a `RuntimeError` and terminates.
+- Docker Compose fails fast if `GEMINI_API_KEY` is not provided in the root `.env` file.
+
+### Model Fallback Cascade
+To provide high reliability during rate limits or model deprecations, the engine cascades automatically:
+1. `gemini-3-flash-preview` (Default primary model)
+2. `gemini-3.5-flash-lite` (Fast high-availability tier)
+3. `gemini-flash-latest` (Stable fallback tier)
+
+### Graceful Fallback
+If an image is completely illegible or the AI tier fails:
+- The backend marks `ocr_status = 'failed'` and provides a descriptive failure message.
+- The original file binary is preserved on disk.
+- The user can proceed with manual data entry via the "Upload anyway" flow while keeping the file preview attached.
+
+---
+
+## 4. Database Connection Pool & Migrations
+
+Located in [`backend/app/database.py`](file:///Users/sreejan/Codes/Mediclaim/backend/app/database.py).
+- Utilizes `psycopg2.pool.ThreadedConnectionPool` (1 to 20 connections) configured with connection retry logic.
+- Managed via the `@contextmanager def get_db()` context manager with automated transaction commit and rollback handlers.
+- **Automated Migration Runner**: `init_db()` runs automatically on application startup during the FastAPI lifespan event:
+  - Enables the `pgcrypto` PostgreSQL extension.
+  - Creates baseline tables if not present (`users`, `user_roles`, `patient_profiles`, `patient_caregivers`).
+  - Executes incremental `ALTER TABLE ADD COLUMN IF NOT EXISTS` routines to guarantee backward and forward compatibility.
+
+---
+
+## 5. Local Development Setup
+
+### 1. Prerequisites
+- Python 3.12+
+- PostgreSQL 16+ running locally with database `mediclaim` created
+
+### 2. Virtual Environment & Dependencies
 ```bash
+cd backend
 python -m venv .venv
-# Windows PowerShell:
-.venv\Scripts\Activate.ps1
-# macOS/Linux:
-source .venv/bin/activate
-
+source .venv/bin/activate  # On Windows: .venv\Scripts\activate
 pip install -r requirements.txt
-# Set a strong secret before running (PowerShell example):
-$env:JWT_SECRET = "replace-with-a-long-random-secret"
-uvicorn app.main:app --reload
 ```
 
-Open http://localhost:8000/docs.
-
-## Run with Docker
-
-The root `docker-compose.yml` runs `postgres`, `backend`, and `frontend` together.
-
-From the project root:
-
+### 3. Environment Variables
+Set the required environment variables:
 ```bash
-docker compose up --build -d
+export DATABASE_URL="postgresql://mediclaim:mediclaim_secret_password@localhost:5432/mediclaim"
+export JWT_SECRET="your-strong-random-jwt-secret-minimum-32-chars"
+export GEMINI_API_KEY="your-google-gemini-api-key"
+export GEMINI_MODEL="gemini-3-flash-preview"
+export STORAGE_DIR="./data/storage"
+```
+
+### 4. Start Development Server
+```bash
+uvicorn app.main:app --host 0.0.0.0 --port 8000 --reload
+```
+Interactive documentation is available at:
+- Swagger UI: `http://localhost:8000/docs`
+- ReDoc: `http://localhost:8000/redoc`
+- Health check: `GET http://localhost:8000/health` returns `{"status":"ok"}`
+
+---
+
+## 6. Running with Docker Compose
+
+From the repository root:
+```bash
+# Build and start backend along with postgres and frontend
+docker compose up --build -d backend
+
+# Inspect live container logs
 docker compose logs -f backend
 ```
 
-Stop:
+---
 
+## 7. Running the Test Suite
+
+The test suite contains 20 comprehensive unit tests covering all operational modules:
+- Admin verification and directory filtering (`test_admin.py`)
+- Authentication, OTP verification, and JWT issuance (`test_auth.py`)
+- Multimodal Gemini parser and structured fallback schema (`test_document_parser.py`)
+- Lifelong timeline age calculations and health graph generation (`test_timeline.py`)
+- Clinical records CRUD, prescriptions, and FHIR entities (`test_records.py`)
+- Doctor encounters, patient inspection, and hospital rosters (`test_doctor_hospital.py`)
+- Consent requests, OTP authorizations, and active grant revocation (`test_consent.py`)
+- Emergency break-glass overrides, audit logging, and record corrections (`test_emergency_audit_corrections.py`)
+- Patient profile completion and permitted demographic updates (`test_patients.py`)
+
+Run tests inside the running Docker container:
 ```bash
-docker compose down
+docker exec mediclaim-backend python -m unittest discover -s tests
+```
+Or locally in your virtual environment:
+```bash
+python -m unittest discover -s tests
+```
+Output:
+```text
+Ran 20 tests in ~0.95s
+OK
 ```
 
-The PostgreSQL database is hosted in the `postgres` container with persistent data in the `postgres_data` volume. `docker compose down -v` deletes all database volumes.
+---
 
-## Test the flow
+## 8. API Documentation & Full Specification
 
-### 1. Register
-
-```bash
-curl -X POST http://localhost:8000/api/v1/auth/register \
-  -H "Content-Type: application/json" \
-  -d '{
-    "fullName": "Ananya Rao",
-    "dateOfBirth": "1994-05-12",
-    "phone": "+919876543210",
-    "aadhaarNumber": "482193061175",
-    "password": "SecurePassword123!"
-  }'
-```
-
-The development OTP and generated Mediclaim ID are printed in container logs:
-
-```bash
-docker compose logs backend
-```
-
-The OTP is six digits. It expires after 300 seconds.
-
-### 2. Verify OTP
-
-Use `userId` from the registration response and the OTP from development logs:
-
-```bash
-curl -X POST http://localhost:8000/api/v1/auth/verify-otp \
-  -H "Content-Type: application/json" \
-  -d '{"userId":"usr-...","otp":"123456"}'
-```
-
-### 3. Login
-
-Use the generated Mediclaim ID from development logs. Spaces are accepted in the ID:
-
-```bash
-curl -X POST http://localhost:8000/api/v1/auth/login \
-  -H "Content-Type: application/json" \
-  -d '{"mediclaimId":"1234 5678 9012","password":"SecurePassword123!"}'
-```
-
-## Contract notes and deliberate limitations
-
-1. The registration response in the supplied contract does **not** contain `mediclaimId`, although the contract says registration issues one and login requires it. To preserve the specified JSON response, this implementation does not add that field. In development, the ID is printed to the application logs. Before production, decide how the patient securely receives the ID (for example, add it to the registration response after updating the contract).
-2. The supplied contract does not define an SMS vendor or Aadhaar authentication provider. This project generates a phone OTP and prints it only in development mode. It does **not** perform Aadhaar identity verification and must not be represented as doing so. Integrate an authorized provider before production.
-3. `OTP_DEBUG=true` is a development-only adapter. Do not deploy with it enabled. A real SMS adapter must dispatch the OTP before the API reports `otpSent: true`.
-4. Aadhaar is stored as plaintext in this starter implementation solely to support the specified duplicate check and linkage. That is not suitable for production. Minimize retention; use a lawful authorized verification flow, encryption/tokenization, strict access controls, and a reviewed retention policy.
-5. PostgreSQL is used for persistence and data integrity across users, clinical records, patient profiles, and access grants. Add rate limiting, audit logging, key rotation, monitoring, HTTPS, and security review.
-6. JWT signing secret must be a strong secret supplied through the environment. Never commit it.
-7. `adminVerified` remains `false`; this API does not implement an admin verification workflow.
-
-## Error handling
-
-FastAPI/Pydantic validation errors use HTTP 422 by default. Business errors return FastAPI `detail` objects with an error `code`; duplicate account is HTTP 409, invalid credentials HTTP 401, and invalid/expired OTP HTTP 400. The contract's RFC 7807-style envelope is not globally imposed here because the supplied examples do not define a complete per-endpoint error schema.
-
-## Health check
-
-`GET /health` returns `{"status":"ok"}`.
+For detailed schemas, request/response payloads, authentication headers, and RFC 9457 error contracts, refer to:
+- **Backend API Reference**: [`docs/BACKEND_API.md`](file:///Users/sreejan/Codes/Mediclaim/docs/BACKEND_API.md)
+- **Database Architecture**: [`docs/DATABASE.md`](file:///Users/sreejan/Codes/Mediclaim/docs/DATABASE.md)

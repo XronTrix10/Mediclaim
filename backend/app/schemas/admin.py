@@ -4,6 +4,7 @@ from app.schemas.auth import EnvelopeMeta
 from app.schemas.patient import EmergencyContact
 
 class PendingVerificationItem(BaseModel):
+    model_config = ConfigDict(extra="ignore")
     userId: str
     fullName: str
     dateOfBirth: str
@@ -13,8 +14,14 @@ class PendingVerificationItem(BaseModel):
     phoneVerified: bool = True
     adminVerified: bool = False
     registeredAt: str
+    mediclaimId: Optional[str] = None
+    gender: Optional[str] = None
+    bloodGroup: Optional[str] = None
+    address: Optional[str] = None
+    role: Optional[str] = None
 
 class PendingVerificationDetail(BaseModel):
+    model_config = ConfigDict(extra="ignore")
     userId: str
     fullName: str
     dateOfBirth: str
@@ -28,6 +35,12 @@ class PendingVerificationDetail(BaseModel):
     address: Optional[str] = None
     emergencyContact: Optional[EmergencyContact] = None
     registeredAt: str
+    mediclaimId: Optional[str] = None
+    role: Optional[str] = None
+    specialization: Optional[str] = None
+    registrationNumber: Optional[str] = None
+    qualification: Optional[str] = None
+    organizationName: Optional[str] = None
 
 class PendingVerificationsResponse(BaseModel):
     status: str = "success"

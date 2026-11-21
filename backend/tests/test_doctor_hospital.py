@@ -6,10 +6,14 @@ from app.database import get_db
 from app.exceptions import APIProblemException
 from app.security import AuthenticatedUser
 from app.schemas.auth import RegisterRequest
-from app.schemas.hospital import OrganizationCreateInput, PractitionerCreateInput
+from app.schemas.hospital import (
+    OrganizationCreateInput, PractitionerCreateInput,
+    HospitalRegisterInput, HospitalLoginInput,
+)
 from app.schemas.doctor import (
     DoctorAccessRequestInput, DoctorEncounterInput, DoctorConditionInput,
     DoctorPrescriptionInput, DoctorReportInput, DoctorVaccinationInput,
+    DoctorRegisterInput, DoctorRequestOtpInput, DoctorVerifyOtpInput,
 )
 from app.schemas.records import MedicationItem
 from app.schemas.consent import ApproveRequestInput
@@ -17,12 +21,14 @@ from app.routes.auth import register
 from app.routes.hospital import (
     get_organizations, register_organization, get_organization_detail,
     get_practitioners, onboard_practitioner, get_practitioner_detail,
+    register_hospital_route, hospital_login_route, get_hospital_patients_route,
 )
 from app.routes.doctor import (
     get_authorized_patients, get_authorized_patient, get_authorized_records,
     submit_access_request, get_doctor_access_requests,
     create_encounter, create_condition, create_prescription,
     create_report, create_vaccination,
+    register_practitioner, doctor_request_otp_route, doctor_verify_otp_route,
 )
 from app.routes.consent import approve_request, revoke_grant
 from app.routes.admin import approve_patient_verification
@@ -349,3 +355,101 @@ class TestDoctorHospitalSuite(unittest.TestCase):
             )
         self.assertEqual(cm_revoked.exception.status_code, 403)
         self.assertEqual(cm_revoked.exception.code, "CONSENT_REVOKED")
+
+    def test_doctor_and_hospital_auth_flow(self):
+        # 1. Doctor Registration
+        doc_phone = f"+9194{secrets.randbelow(90000000) + 10000000}"
+        doc_aadhaar = str(secrets.randbelow(900000000000) + 100000000000)
+        doc_lic = f"MCI-AUTH-{secrets.randbelow(900000) + 100000}"
+
+        reg_doc = register_practitioner(DoctorRegisterInput(
+            fullName="Dr. Alok Verma",
+            dateOfBirth="1985-05-20",
+            phone=doc_phone,
+            aadhaarNumber=doc_aadhaar,
+            password="SecureDoctorPass123!",
+            medicalLicenseNumber=doc_lic,
+            specialization="Pulmonology",
+            yearsOfExperience=10,
+            hospitalName="City Care Hospital",
+        ))
+        self.assertEqual(reg_doc["status"], "success")
+        self.assertEqual(reg_doc["data"]["accountStatus"], "pending_admin_approval")
+        doc_user_id = reg_doc["data"]["userId"].replace("usr_", "")
+
+        # 2. Doctor Request OTP
+        req_otp = doctor_request_otp_route(DoctorRequestOtpInput(phone=doc_phone))
+        self.assertEqual(req_otp["status"], "success")
+        otp_code = req_otp["data"]["debugOtp"] or "123456"
+
+        # 3. Before admin approval, verify-otp fails with ACCOUNT_PENDING_APPROVAL
+        with self.assertRaises(APIProblemException) as cm_pending:
+            doctor_verify_otp_route(DoctorVerifyOtpInput(phone=doc_phone, otp=otp_code))
+        self.assertEqual(cm_pending.exception.status_code, 403)
+        self.assertEqual(cm_pending.exception.code, "ACCOUNT_PENDING_APPROVAL")
+
+        # 4. Admin approves doctor
+        approve_patient_verification(doc_user_id, self.admin_user)
+
+        # 5. Doctor Request fresh OTP and verify -> Success
+        req_otp2 = doctor_request_otp_route(DoctorRequestOtpInput(phone=doc_phone))
+        otp_code2 = req_otp2["data"]["debugOtp"] or "123456"
+        ver_doc = doctor_verify_otp_route(DoctorVerifyOtpInput(phone=doc_phone, otp=otp_code2))
+        self.assertEqual(ver_doc["status"], "success")
+        self.assertIn("accessToken", ver_doc["data"])
+        self.assertEqual(ver_doc["data"]["user"]["role"], "practitioner")
+
+        # 6. Hospital Registration
+        hosp_phone = f"+9193{secrets.randbelow(90000000) + 10000000}"
+        hosp_email = f"admin_{secrets.token_hex(4)}@medicity.org"
+        hosp_reg_no = f"HOSP-{secrets.randbelow(900000) + 100000}"
+
+        reg_hosp = register_hospital_route(HospitalRegisterInput(
+            name="Medicity Multi-Specialty Hospital",
+            registrationNumber=hosp_reg_no,
+            type="hospital",
+            address="45 Health City Road, Delhi",
+            phone=hosp_phone,
+            email=hosp_email,
+            password="SecureHospPassword123!",
+        ))
+        self.assertEqual(reg_hosp["status"], "success")
+        self.assertIn("orgId", reg_hosp["data"])
+
+        # Find hospital user ID
+        with get_db() as conn:
+            hosp_u = conn.execute("SELECT id FROM users WHERE email = %s", (hosp_email,)).fetchone()
+            hosp_user_id = str(hosp_u["id"])
+
+        # 7. Before approval, hospital login fails with ACCOUNT_PENDING_APPROVAL
+        with self.assertRaises(APIProblemException) as cm_hosp_pen:
+            hospital_login_route(HospitalLoginInput(email=hosp_email, password="SecureHospPassword123!"))
+        self.assertEqual(cm_hosp_pen.exception.status_code, 403)
+        self.assertEqual(cm_hosp_pen.exception.code, "ACCOUNT_PENDING_APPROVAL")
+
+        # 8. Admin approves hospital account
+        approve_patient_verification(hosp_user_id, self.admin_user)
+
+        # 9. Hospital Login -> Success
+        login_hosp = hospital_login_route(HospitalLoginInput(email=hosp_email, password="SecureHospPassword123!"))
+        self.assertEqual(login_hosp["status"], "success")
+        self.assertIn("accessToken", login_hosp["data"])
+        self.assertEqual(login_hosp["data"]["user"]["role"], "hospital_admin")
+
+        # 10. Hospital can access hospital patients endpoint
+        hosp_user = AuthenticatedUser(
+            id=f"usr_{hosp_user_id}",
+            raw_uuid=hosp_user_id,
+            public_id=f"usr{secrets.token_hex(4)[:9]}",
+            mediclaim_id=None,
+            full_name="Medicity Multi-Specialty Hospital",
+            email=hosp_email,
+            phone=hosp_phone,
+            roles=["hospital_admin"],
+            is_active=True,
+            admin_verified=True,
+            profile_complete=True,
+        )
+        pats = get_hospital_patients_route(current_user=hosp_user)
+        self.assertEqual(pats["status"], "success")
+        self.assertIsInstance(pats["data"], list)

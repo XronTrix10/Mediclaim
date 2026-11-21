@@ -6,11 +6,14 @@ from app.schemas.auth import EnvelopeMeta
 from app.schemas.hospital import (
     OrganizationCreateInput, OrganizationsListResponse,
     PractitionerCreateInput, PractitionersListResponse,
+    HospitalRegisterInput, HospitalLoginInput,
 )
 from app.services.hospital_service import (
     list_organizations, get_organization, create_organization,
     list_practitioners, get_practitioner, create_practitioner,
+    register_hospital, login_hospital,
 )
+from app.services.doctor_service import list_doctor_patients
 from app.security import get_current_user, AuthenticatedUser
 from app.exceptions import APIProblemException
 
@@ -26,13 +29,48 @@ def _make_meta(total: Optional[int] = None) -> EnvelopeMeta:
 
 
 def _require_admin_or_hospital(user: AuthenticatedUser) -> None:
-    if not user.has_role("admin", "hospital_admin"):
+    if not user.has_role("admin", "hospital_admin", "organization"):
         raise APIProblemException(
             status_code=status.HTTP_403_FORBIDDEN,
             title="Access Denied",
             detail="Hospital Administrator or System Administrator privileges required.",
             code="UNAUTHORIZED_ROLE",
         )
+
+
+@router.post("/register", status_code=status.HTTP_201_CREATED)
+def register_hospital_route(payload: HospitalRegisterInput):
+    data = register_hospital(payload)
+    return {
+        "status": "success",
+        "message": "Healthcare organization registration submitted. Awaiting administrator verification.",
+        "data": data,
+        "meta": _make_meta(),
+    }
+
+
+@router.post("/login", status_code=status.HTTP_200_OK)
+def hospital_login_route(payload: HospitalLoginInput):
+    data = login_hospital(payload)
+    return {
+        "status": "success",
+        "message": "Healthcare organization authenticated successfully.",
+        "data": data,
+        "meta": _make_meta(),
+    }
+
+
+@router.get("/patients", status_code=status.HTTP_200_OK)
+def get_hospital_patients_route(
+    current_user: AuthenticatedUser = Depends(get_current_user),
+):
+    _require_admin_or_hospital(current_user)
+    patients = list_doctor_patients(current_user)
+    return {
+        "status": "success",
+        "data": patients,
+        "meta": _make_meta(total=len(patients)),
+    }
 
 
 @router.get("/organizations", response_model=OrganizationsListResponse, status_code=status.HTTP_200_OK)

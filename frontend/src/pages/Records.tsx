@@ -7,6 +7,7 @@ import type { KindFilter } from '../components/FilterChips'
 import { KindBubble, KindTag } from '../components/Kind'
 import RecordDetailDialog from '../components/records/RecordDetailDialog'
 import CorrectionDialog from '../components/records/CorrectionDialog'
+import ManualRecordModal from '../components/records/ManualRecordModal'
 import { PrescriptionUploader } from '../components/dashboard'
 import type { UploaderHandle } from '../components/dashboard'
 import { kindOrder } from '../data/mock'
@@ -14,7 +15,7 @@ import { formatDate, formatWhen } from '../lib/format'
 import { downloadHistory } from '../lib/exportHistory'
 import { button, card, cardFlush, input } from '../lib/ui'
 import { useHealthData } from '../store/healthData'
-import type { HealthEvent } from '../types'
+import type { HealthEvent, Kind } from '../types'
 
 export default function Records() {
   const { profile, events, corrections } = useHealthData()
@@ -22,6 +23,7 @@ export default function Records() {
   const uploader = useRef<UploaderHandle>(null)
   const [viewing, setViewing] = useState<HealthEvent | null>(null)
   const [correcting, setCorrecting] = useState<{ open: boolean; recordId?: string }>({ open: false })
+  const [manualModalOpen, setManualModalOpen] = useState(false)
 
   // Filters live in the URL, so links like /app/records?kind=allergy work and the back button behaves.
   const kindParam = params.get('kind')
@@ -49,6 +51,11 @@ export default function Records() {
   return (
     <>
       <PrescriptionUploader ref={uploader} />
+      <ManualRecordModal
+        open={manualModalOpen}
+        initialKind={filter !== 'all' ? (filter as Kind) : 'vaccination'}
+        onClose={() => setManualModalOpen(false)}
+      />
       <RecordDetailDialog
         record={viewing}
         onClose={() => setViewing(null)}
@@ -63,6 +70,10 @@ export default function Records() {
         <button type="button" className={button('ghost')} onClick={() => downloadHistory(profile, events)}>
           <Icon name="download" size={18} />
           Download history
+        </button>
+        <button type="button" className={button('soft')} onClick={() => setManualModalOpen(true)}>
+          <Icon name="plus" size={18} />
+          Add record
         </button>
         <button type="button" className={button('primary')} onClick={() => uploader.current?.openPicker()}>
           <Icon name="upload" size={18} />
@@ -97,10 +108,29 @@ export default function Records() {
             </strong>
             <p>
               {events.length === 0
-                ? 'Upload a prescription or add an allergy from the overview page.'
+                ? 'Record a vaccination, illness, or upload a prescription to get started.'
                 : 'Try a different word, or clear the filter to see everything.'}
             </p>
-            {events.length > 0 && (
+            {events.length === 0 ? (
+              <div className="mt-3 flex flex-wrap gap-2.5">
+                <button
+                  type="button"
+                  className={button('primary', 'sm')}
+                  onClick={() => setManualModalOpen(true)}
+                >
+                  <Icon name="plus" size={15} />
+                  Add manual record
+                </button>
+                <button
+                  type="button"
+                  className={button('ghost', 'sm')}
+                  onClick={() => uploader.current?.openPicker()}
+                >
+                  <Icon name="upload" size={15} />
+                  Upload record file
+                </button>
+              </div>
+            ) : (
               <button
                 className={`${button('soft', 'sm')} mt-2`}
                 type="button"

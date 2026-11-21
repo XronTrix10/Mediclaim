@@ -93,6 +93,16 @@ class TestAdminPortalService(unittest.TestCase):
             user_row = conn.execute("SELECT admin_verified FROM users WHERE id = %s", (patient_user_id.replace("usr_", ""),)).fetchone()
             self.assertTrue(user_row["admin_verified"])
 
+        # 5b. Verify status filters in verifications list
+        verified_res = get_pending_verifications(limit=50, query="Sunita", status="verified", current_user=self.admin_user)
+        self.assertTrue(any(p["userId"] == patient_user_id and p["adminVerified"] for p in verified_res["data"]))
+
+        all_res = get_pending_verifications(limit=50, query="Sunita", status="all", current_user=self.admin_user)
+        self.assertTrue(any(p["userId"] == patient_user_id for p in all_res["data"]))
+
+        pending_again = get_pending_verifications(limit=50, query="Sunita", status="pending", current_user=self.admin_user)
+        self.assertFalse(any(p["userId"] == patient_user_id for p in pending_again["data"]))
+
         # 6. Admin stats check
         stats_res = get_system_stats(current_user=self.admin_user)
         self.assertEqual(stats_res["status"], "success")

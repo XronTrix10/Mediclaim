@@ -41,10 +41,15 @@ export function PatientNodeView({ data }: NodeProps<PatientNodeType>) {
 }
 
 export function CategoryNodeView({ data }: NodeProps<CategoryNodeType>) {
+  const meta = kinds[data.kind] ?? {
+    label: data.kind || 'Record',
+    plural: (data.kind || 'Record') + 's',
+    icon: 'file' as const,
+  }
   const body = (
     <>
-      <Icon name={kinds[data.kind].icon} size={16} />
-      <span className="truncate">{data.label}</span>
+      <Icon name={meta.icon} size={16} />
+      <span className="truncate">{data.label || meta.plural}</span>
       <span className="rounded-full bg-white/80 px-1.5 text-[0.7rem] leading-5">{data.total}</span>
     </>
   )
@@ -71,13 +76,18 @@ export function CategoryNodeView({ data }: NodeProps<CategoryNodeType>) {
 
 export function RecordNodeView({ data }: NodeProps<RecordNodeType>) {
   const { event: e } = data
+  const meta = kinds[e.kind] ?? {
+    label: e.kind || 'Record',
+    plural: (e.kind || 'Record') + 's',
+    icon: 'file' as const,
+  }
   return (
     <div data-kind={e.kind} className="size-full">
       <button
         type="button"
         aria-pressed={data.selected}
-        aria-label={`${kinds[e.kind].label}: ${e.title}`}
-        title={e.title}
+        aria-label={`${meta.label}: ${e.title || 'Untitled'}`}
+        title={e.title || 'Untitled'}
         className={`flex size-full cursor-pointer items-center gap-2 rounded-full border bg-white px-3 text-left text-[0.8rem] font-medium text-(--ki) transition-shadow hover:shadow-soft ${
           data.selected ? 'border-2 border-(--k) shadow-soft ring-4 ring-(--kt)' : 'border-(--k)/60'
         }`}
@@ -86,7 +96,7 @@ export function RecordNodeView({ data }: NodeProps<RecordNodeType>) {
           className={`size-2 shrink-0 rounded-full ${e.status === 'resolved' ? 'border border-(--k) bg-white' : 'bg-(--k)'}`}
           aria-hidden="true"
         />
-        <span className="truncate">{data.label}</span>
+        <span className="truncate">{data.label || e.title || 'Untitled'}</span>
       </button>
       <Handles mode={data.mode} source={false} />
     </div>

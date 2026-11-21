@@ -1,15 +1,20 @@
-import { useEffect, useRef, useState } from 'react'
+import { useEffect, useRef, useState, useContext } from 'react'
 import Icon from './Icon'
-import { useHealthData } from '../store/healthData'
+import { HealthDataContext } from '../store/healthData'
 import { avatar } from '../lib/ui'
 import { initials } from '../lib/format'
 import { authApi } from '../api/auth'
 
-/** Account menu for small screens, where the sidebar's profile block and Sign out are not shown. */
+/** Account menu for small screens, safe across Patient, Doctor, Hospital, and Admin layouts. */
 export default function UserMenu() {
-  const { profile } = useHealthData()
+  const healthCtx = useContext(HealthDataContext)
+  const currentUser = authApi.getCurrentUser()
   const [open, setOpen] = useState(false)
   const ref = useRef<HTMLDivElement>(null)
+
+  const fullName = healthCtx?.profile?.fullName || currentUser?.fullName || 'User'
+  const mediclaimId = healthCtx?.profile?.mediclaimId || currentUser?.mediclaimId
+  const role = currentUser?.role ? currentUser.role.replace('_', ' ') : ''
 
   useEffect(() => {
     if (!open) return
@@ -37,13 +42,17 @@ export default function UserMenu() {
         aria-label="Account menu"
         onClick={() => setOpen((v) => !v)}
       >
-        {initials(profile.fullName)}
+        {initials(fullName)}
       </button>
       {open && (
         <div className="absolute right-0 top-full z-30 mt-2 w-64 rounded-[20px] border border-line bg-white p-2 shadow-soft">
           <div className="px-3 py-2">
-            <strong className="block truncate text-[0.95rem] font-semibold">{profile.fullName}</strong>
-            <small className="block text-[0.8rem] text-ink-faint">ID {profile.mediclaimId}</small>
+            <strong className="block truncate text-[0.95rem] font-semibold">{fullName}</strong>
+            {mediclaimId ? (
+              <small className="block text-[0.8rem] text-ink-faint">ID {mediclaimId}</small>
+            ) : role ? (
+              <small className="block text-[0.8rem] text-ink-faint capitalize">{role}</small>
+            ) : null}
           </div>
           <button
             type="button"

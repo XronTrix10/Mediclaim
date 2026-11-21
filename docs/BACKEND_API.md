@@ -202,7 +202,49 @@ Accepts 12-digit Mediclaim ID (digits or spaced) with password or verified OTP.
 
 ---
 
-### 3.4 Request Login SMS OTP
+### 3.4 Administrator Sign In
+`POST /api/v1/auth/admin/login`
+
+Authenticates administrative personnel using administrator username/email and password. Issues a scoped JWT bearer token with `role: "admin"`.
+
+#### Request Body
+```json
+{
+  "username": "admin@mediclaim.gov.in",
+  "password": "Admin@123"
+}
+```
+
+#### Response (`200 OK`)
+```json
+{
+  "status": "success",
+  "data": {
+    "accessToken": "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9...",
+    "tokenType": "Bearer",
+    "expiresIn": 86400,
+    "user": {
+      "id": "usr_00000000-0000-0000-0000-000000000001",
+      "fullName": "System Administrator",
+      "email": "admin@mediclaim.gov.in",
+      "phone": "+910000000000",
+      "role": "admin",
+      "mediclaimId": "ADMIN0000001",
+      "isActive": true,
+      "adminVerified": true,
+      "isProfileComplete": true
+    }
+  },
+  "meta": {
+    "requestId": "req_01J0A1B2C6",
+    "serverTime": "2026-11-16T22:32:30Z"
+  }
+}
+```
+
+---
+
+### 3.5 Request Login SMS OTP
 `POST /api/v1/auth/otp/request`
 
 #### Request Body
@@ -543,44 +585,178 @@ Performs clinical retraction (`status: entered-in-error` / soft-delete) preservi
 
 ## 6. Document Ingestion & File Storage (`/uploads` & `/documents`)
 
-### 6.1 Upload Prescription / Medical Document
+### 6.1 Upload Prescription / Medical Document & Trigger AI OCR
 `POST /api/v1/uploads`  
 **Content-Type**: `multipart/form-data`  
 **Max File Size**: 10 MB  
-**Allowed Types**: `application/pdf`, `image/png`, `image/jpeg`
+**Allowed Types**: `application/pdf`, `image/png`, `image/jpeg`, `image/jpg`, `image/webp`
+
+Uploads an original document to disk storage under `STORAGE_DIR/documents/<patient_id>/`, computes a streaming SHA-256 checksum, registers a `medical_documents` record, and triggers Multimodal AI extraction via Google DeepMind's Gemini 3 Flash model.
 
 #### Form Parameters:
-- `file`: Binary file data
-- `title`: string
-- `doctor`: string
-- `consultationDate`: `YYYY-MM-DD`
+- `file`: Binary file stream (PDF, PNG, JPEG, WEBP)
+- `title`: string (optional, defaults to sanitized file name)
+- `doctor`: string (optional)
+- `consultationDate`: `YYYY-MM-DD` (optional, used to guide extraction)
 - `organization`: string (optional)
-- `documentType`: `prescription` | `lab_report` | `discharge_summary`
+- `documentType`: `prescription` | `vaccination` | `lab_report` | `discharge_summary` | `birth_certificate` | `other`
+- `autoParse`: `boolean` (default `true`)
+- `asyncMode`: `boolean` (default `false`; when false, runs synchronously so parsed results return immediately to client)
 
-#### Response (`202 Accepted` or `201 Created`)
+#### Response (`201 Created` - Synchronous Extraction)
 ```json
 {
   "status": "success",
-  "message": "Document uploaded and queued for processing.",
+  "message": "Document uploaded and parsed successfully by Gemini.",
   "data": {
     "uploadId": "upl_20261116_001",
     "documentId": "doc_9a8b7c01",
-    "fileName": "chest_prescription.pdf",
+    "fileName": "pediatric_birth_certificate.pdf",
     "fileType": "pdf",
     "fileSizeBytes": 421890,
-    "ocrStatus": "processing",
-    "date": "2026-11-16",
-    "doctor": "Dr. Rohan Kulkarni"
+    "fileUrl": "http://localhost:8000/api/v1/documents/doc_9a8b7c01/preview",
+    "ocrStatus": "needs_review",
+    "parseConfidence": 0.94,
+    "parserProvider": "gemini-3-flash-preview",
+    "date": "1994-05-12",
+    "doctor": "Government Maternity Hospital",
+    "extractedData": {
+      "documentType": "birth_certificate",
+      "confidence": 0.94,
+      "documentDate": "1994-05-12",
+      "provider": "Government Maternity Hospital",
+      "reports": [
+        {
+          "reportName": "Birth record",
+          "reportType": "birth_certificate",
+          "reportDate": "1994-05-12",
+          "conclusion": "Birth weight 3.1 kg. Delivered with no maternal or neonatal complications.",
+          "provider": "Government Maternity Hospital"
+        }
+      ],
+      "vaccinations": [
+        {
+          "vaccineName": "BCG and Hepatitis B (birth dose)",
+          "doseNumber": 1,
+          "administeredDate": "1994-05-12",
+          "provider": "Government Maternity Hospital"
+        }
+      ],
+      "conditions": [],
+      "prescriptions": [],
+      "medications": [],
+      "allergies": [],
+      "warnings": []
+    }
+  },
+  "meta": {
+    "requestId": "req_01J0X9Y8Z7",
+    "serverTime": "2026-11-22T00:00:00Z"
   }
 }
 ```
 
 ---
 
-### 6.2 Stream / Download Authenticated Document Content
-`GET /api/v1/documents/{id}/content`
+### 6.2 Check Document Parsing Status
+`GET /api/v1/documents/{documentId}/parse-status`
 
-Streams decrypted document binary with `Cache-Control: no-store` and `Content-Disposition: inline`. Requires active session or authorized doctor grant.
+Polls or inspects the AI extraction status of an uploaded document.
+
+#### Response (`200 OK`)
+```json
+{
+  "status": "success",
+  "data": {
+    "documentId": "doc_9a8b7c01",
+    "fileName": "prescription_scanned.png",
+    "ocrStatus": "needs_review",
+    "parseConfidence": 0.91,
+    "fileUrl": "http://localhost:8000/api/v1/documents/doc_9a8b7c01/preview",
+    "extractedData": { ... },
+    "failureMessage": null
+  }
+}
+```
+
+---
+
+### 6.3 Commit Verified Extracted Document Payload
+`POST /api/v1/documents/{documentId}/commit`
+
+Saves the patient-reviewed and edited JSON payload into respective clinical tables (`clinical_records`, `prescriptions`, `conditions`, `vaccinations`, `allergies`, `diagnostic_reports`), automatically linking `document_id`.
+
+#### Request Body
+```json
+{
+  "payload": {
+    "documentType": "discharge_summary",
+    "title": "Hospital Discharge & Birth Record",
+    "documentDate": "1994-05-12",
+    "provider": "Government Maternity Hospital",
+    "confidence": 0.95,
+    "conditions": [
+      {
+        "conditionName": "Neonatal Jaundice (mild, resolved)",
+        "status": "resolved",
+        "onsetDate": "1994-05-12"
+      }
+    ],
+    "vaccinations": [
+      {
+        "vaccineName": "BCG and Hepatitis B (birth dose)",
+        "doseNumber": 1,
+        "administeredDate": "1994-05-12",
+        "provider": "Government Maternity Hospital"
+      }
+    ],
+    "prescriptions": [],
+    "medications": [],
+    "allergies": [],
+    "reports": [
+      {
+        "reportName": "Birth record",
+        "reportDate": "1994-05-12",
+        "conclusion": "Birth weight 3.1 kg. No complications."
+      }
+    ],
+    "warnings": []
+  }
+}
+```
+
+#### Response (`200 OK`)
+```json
+{
+  "status": "success",
+  "message": "Document extracted records successfully verified and committed.",
+  "data": {
+    "documentId": "doc_9a8b7c01",
+    "fileUrl": "http://localhost:8000/api/v1/documents/doc_9a8b7c01/preview",
+    "ocrStatus": "completed",
+    "createdCount": 3,
+    "createdRecords": {
+      "conditions": ["rec_c01"],
+      "vaccinations": ["rec_v01"],
+      "reports": ["rec_r01"]
+    }
+  }
+}
+```
+
+---
+
+### 6.4 Stream Authenticated Document Inline Preview
+`GET /api/v1/documents/{documentId}/preview`
+
+Streams the decrypted document inline with `Content-Disposition: inline` and `Cache-Control: no-store`. Validates active user session or active doctor consent grant before reading and streaming bytes.
+
+---
+
+### 6.5 Download Document Binary
+`GET /api/v1/documents/{documentId}/content`
+
+Downloads the original binary stream with `Content-Disposition: attachment`. Requires active session or authorized doctor grant.
 
 ---
 

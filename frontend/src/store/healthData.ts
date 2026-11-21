@@ -8,6 +8,10 @@ import type {
   HealthEvent,
   Kind,
   NewAllergyInput,
+  NewConditionInput,
+  NewMedicationInput,
+  NewVaccinationInput,
+  NewReportInput,
   PatientProfile,
   PermittedPersonalDetailsUpdate,
   PrescriptionRecord,
@@ -16,7 +20,7 @@ import type {
 
 export interface HealthState {
   profile: PatientProfile
-  /** Records the user owns directly (allergies). Prescriptions and sample data are merged in by the provider. */
+  /** Records the user owns directly (allergies, conditions, vaccinations, reports, medications). */
   ownEvents: HealthEvent[]
   prescriptions: PrescriptionRecord[]
   sampleLoaded: boolean
@@ -35,9 +39,14 @@ export interface GiveAccessInput {
 }
 
 export interface HealthActions {
-  completeProfile: (payload: ProfileCompletionPayload) => void
-  updatePermittedDetails: (update: PermittedPersonalDetailsUpdate) => void
-  addAllergy: (input: NewAllergyInput) => void
+  refreshData: () => Promise<void>
+  completeProfile: (payload: ProfileCompletionPayload) => Promise<void> | void
+  updatePermittedDetails: (update: PermittedPersonalDetailsUpdate) => Promise<void> | void
+  addAllergy: (input: NewAllergyInput) => Promise<HealthEvent | void> | void
+  addVaccination: (input: NewVaccinationInput) => Promise<HealthEvent>
+  addCondition: (input: NewConditionInput) => Promise<HealthEvent>
+  addMedication: (input: NewMedicationInput) => Promise<HealthEvent>
+  addReport: (input: NewReportInput) => Promise<HealthEvent>
   addPrescription: (rx: Omit<PrescriptionRecord, 'id'>) => void
   removePrescription: (id: string) => void
   toggleSample: () => void

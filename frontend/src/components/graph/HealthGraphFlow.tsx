@@ -76,14 +76,17 @@ function GraphInner({ events, patientName, dateOfBirth }: HealthGraphFlowProps) 
     const handlesAt = mode === 'tree' ? { sourcePosition: Position.Right, targetPosition: Position.Left } : {}
     const edgeType = mode === 'radial' ? 'straight' : 'default'
 
+    const firstName = (patientName || 'User').trim().split(/\s+/)[0] || 'User'
+    const birthYear = dateOfBirth && dateOfBirth.length >= 4 ? dateOfBirth.slice(0, 4) : ''
+
     const nodes: GraphNode[] = [
       {
         id: PATIENT_ID,
         type: 'patient',
-        position: pos[PATIENT_ID],
+        position: pos[PATIENT_ID] ?? { x: 0, y: 0 },
         width: sizes.patient.w,
         height: sizes.patient.h,
-        data: { mode, name: patientName.split(' ')[0], since: `since ${dateOfBirth.slice(0, 4)}` },
+        data: { mode, name: firstName, since: birthYear ? `since ${birthYear}` : '' },
         ...handlesAt,
       },
     ]
@@ -91,16 +94,17 @@ function GraphInner({ events, patientName, dateOfBirth }: HealthGraphFlowProps) 
 
     for (const b of branches) {
       const cid = categoryId(b.kind)
+      const kindLabel = kinds[b.kind]?.plural ?? b.kind
       nodes.push({
         id: cid,
         type: 'category',
-        position: pos[cid],
+        position: pos[cid] ?? { x: 0, y: 0 },
         width: sizes.category.w,
         height: sizes.category.h,
         data: {
           mode,
           kind: b.kind,
-          label: kinds[b.kind].plural,
+          label: kindLabel,
           total: b.total,
           expanded: expanded.has(b.kind),
           canToggle: b.total > LEAF_LIMIT + 1,
@@ -113,10 +117,10 @@ function GraphInner({ events, patientName, dateOfBirth }: HealthGraphFlowProps) 
         nodes.push({
           id: e.id,
           type: 'record',
-          position: pos[e.id],
+          position: pos[e.id] ?? { x: 0, y: 0 },
           width: sizes.leaf.w,
           height: sizes.leaf.h,
-          data: { mode, event: e, label: e.title, selected: e.id === selectedId },
+          data: { mode, event: e, label: e.title || 'Untitled', selected: e.id === selectedId },
           ...handlesAt,
         })
         edges.push({ id: `e:${cid}-${e.id}`, source: cid, target: e.id, type: edgeType, style: { stroke: kindColor(b.kind), strokeOpacity: 0.4, strokeWidth: 1.5 } })
@@ -126,7 +130,7 @@ function GraphInner({ events, patientName, dateOfBirth }: HealthGraphFlowProps) 
         nodes.push({
           id: mid,
           type: 'more',
-          position: pos[mid],
+          position: pos[mid] ?? { x: 0, y: 0 },
           width: sizes.leaf.w,
           height: sizes.leaf.h,
           data: { mode, kind: b.kind, hidden: b.hidden },
@@ -148,7 +152,13 @@ function GraphInner({ events, patientName, dateOfBirth }: HealthGraphFlowProps) 
   )
 
   const refit = useCallback(() => {
-    requestAnimationFrame(() => fitView({ padding: 0.12, duration: 250, maxZoom: 1.1 }))
+    requestAnimationFrame(() => {
+      try {
+        fitView({ padding: 0.12, duration: 250, maxZoom: 1.1 })
+      } catch {
+        // Safe fallback if fitView is called before canvas is ready
+      }
+    })
   }, [fitView])
 
   useEffect(() => {
@@ -252,7 +262,8 @@ function GraphInner({ events, patientName, dateOfBirth }: HealthGraphFlowProps) 
               <div>
                 <dt className="text-ink-faint">Date</dt>
                 <dd className="font-medium">
-                  {formatDate(selected.date)}, {ageAt(dateOfBirth, selected.date).toLowerCase()}
+                  {formatDate(selected.date)}
+                  {dateOfBirth && selected.date ? `, ${ageAt(dateOfBirth, selected.date).toLowerCase()}` : ''}
                 </dd>
               </div>
               <div>
@@ -279,7 +290,7 @@ function GraphInner({ events, patientName, dateOfBirth }: HealthGraphFlowProps) 
             return (
               <li key={k} data-kind={k} className="flex items-center gap-2">
                 <span className="size-2.5 rounded-full bg-(--k)" />
-                <span className="flex-1">{kinds[k].plural}</span>
+                <span className="flex-1">{kinds[k]?.plural ?? k}</span>
                 <span className="font-semibold text-ink">{count}</span>
               </li>
             )

@@ -30,14 +30,21 @@ def _make_meta(total: Optional[int] = None, next_cursor: Optional[str] = None) -
 def get_pending_verifications(
     limit: int = 50,
     offset: int = 0,
-    query: Optional[str] = Query(None, description="Search by full name, phone, or Aadhaar"),
+    query: Optional[str] = Query(None, description="Search by full name, phone, Aadhaar, or Mediclaim ID"),
+    status: Optional[str] = Query(None, description="Filter by status: pending | verified | all"),
     current_user: AuthenticatedUser = Depends(require_role("admin", "hospital_admin")),
 ):
     clean_limit = int(limit) if isinstance(limit, (int, str)) and str(limit).isdigit() else 50
     clean_offset = int(offset) if isinstance(offset, (int, str)) and str(offset).isdigit() else 0
     clean_query = query if isinstance(query, str) else None
+    clean_status = status.lower().strip() if isinstance(status, str) else None
 
-    items, total = list_pending_verifications(limit=clean_limit, offset=clean_offset, search_query=clean_query)
+    items, total = list_pending_verifications(
+        limit=clean_limit,
+        offset=clean_offset,
+        search_query=clean_query,
+        status_filter=clean_status,
+    )
     return {
         "status": "success",
         "data": items,

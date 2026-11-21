@@ -77,6 +77,12 @@ class LoginRequest(BaseModel):
     password: Optional[str] = Field(default=None, max_length=128)
     otp: Optional[str] = Field(default=None, pattern=r"^\d{6}$")
 
+class AdminLoginRequest(BaseModel):
+    model_config = ConfigDict(extra="ignore")
+    username: Optional[str] = None
+    email: Optional[str] = None
+    password: str = Field(min_length=4, max_length=128)
+
 class RequestOTPRequest(BaseModel):
     model_config = ConfigDict(extra="forbid")
     mediclaimId: str = Field(min_length=10, max_length=20)
