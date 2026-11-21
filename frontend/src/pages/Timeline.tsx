@@ -1,4 +1,4 @@
-import { Suspense, lazy, useMemo, useState } from 'react'
+import React, { Component, Suspense, lazy, useMemo, useState } from 'react'
 import { Link } from 'react-router-dom'
 import Icon from '../components/Icon'
 import PageHeader from '../components/PageHeader'
@@ -10,6 +10,53 @@ import { button, emptyBox } from '../lib/ui'
 import { useHealthData } from '../store/healthData'
 import ManualRecordModal from '../components/records/ManualRecordModal'
 import type { HealthEvent, Kind } from '../types'
+
+interface ErrorBoundaryProps {
+  children: React.ReactNode
+}
+
+interface ErrorBoundaryState {
+  hasError: boolean
+}
+
+class GraphErrorBoundary extends Component<ErrorBoundaryProps, ErrorBoundaryState> {
+  constructor(props: ErrorBoundaryProps) {
+    super(props)
+    this.state = { hasError: false }
+  }
+
+  static getDerivedStateFromError(): ErrorBoundaryState {
+    return { hasError: true }
+  }
+
+  componentDidCatch(error: Error, info: React.ErrorInfo) {
+    console.error('HealthGraphFlow rendering error:', error, info)
+  }
+
+  render() {
+    if (this.state.hasError) {
+      return (
+        <div className="flex flex-col items-center justify-center rounded-[26px] border border-line bg-white p-8 text-center shadow-soft">
+          <span className="mb-3 grid size-12 place-items-center rounded-full bg-mist text-ink-faint">
+            <Icon name="alert" size={24} />
+          </span>
+          <p className="font-semibold text-ink">Unable to render health graph</p>
+          <p className="mx-auto mt-1 max-w-sm text-[0.88rem] text-ink-soft">
+            An unexpected error occurred while loading or displaying the graph view. You can view all records in the Timeline tab.
+          </p>
+          <button
+            type="button"
+            className={`${button('primary', 'sm')} mt-4`}
+            onClick={() => this.setState({ hasError: false })}
+          >
+            Try again
+          </button>
+        </div>
+      )
+    }
+    return this.props.children
+  }
+}
 
 // The graph library is large, so it is only downloaded when the Graph tab is first opened.
 const HealthGraphFlow = lazy(() => import('../components/graph/HealthGraphFlow'))
@@ -26,7 +73,7 @@ export default function Timeline() {
     const groups = new Map<string, HealthEvent[]>()
     for (const e of events) {
       if (filter !== 'all' && e.kind !== filter) continue
-      const year = e.date.slice(0, 4)
+      const year = (e.date || '').slice(0, 4) || 'Other'
       groups.set(year, [...(groups.get(year) ?? []), e])
     }
     return [...groups.entries()]
@@ -75,9 +122,15 @@ export default function Timeline() {
       </div>
 
       {view === 'graph' ? (
-        <Suspense fallback={<div className="h-[62dvh] min-h-[380px] animate-pulse rounded-[26px] bg-white" aria-busy="true" />}>
-          <HealthGraphFlow events={events} patientName={profile.fullName} dateOfBirth={profile.dateOfBirth} />
-        </Suspense>
+        <GraphErrorBoundary>
+          <Suspense fallback={<div className="h-[62dvh] min-h-[380px] animate-pulse rounded-[26px] bg-white" aria-busy="true" />}>
+            <HealthGraphFlow
+              events={events || []}
+              patientName={profile?.fullName || ''}
+              dateOfBirth={profile?.dateOfBirth || ''}
+            />
+          </Suspense>
+        </GraphErrorBoundary>
       ) : events.length === 0 ? (
         <div className={emptyBox}>
           <span className="mx-auto mb-3 grid size-12 place-items-center rounded-full bg-mist text-ink-faint">
