@@ -127,8 +127,27 @@ def get_authorized_records(
             "approvedScopes": data["approvedScopes"],
             "expiresAt": data["expiresAt"],
             "records": data["records"],
+            "documents": data.get("documents", []),
         },
         "meta": _make_meta(total=len(data["records"])),
+    }
+
+
+@router.get("/patients/{mediclaim_id}/documents", status_code=status.HTTP_200_OK)
+def get_authorized_documents(
+    mediclaim_id: str,
+    current_user: AuthenticatedUser = Depends(get_current_user),
+):
+    _require_doctor(current_user)
+    data = doctor_access_patient(current_user, mediclaim_id)
+    docs = data.get("documents", [])
+    return {
+        "status": "success",
+        "data": {
+            "patient": data["patient"],
+            "documents": docs,
+        },
+        "meta": _make_meta(total=len(docs)),
     }
 
 

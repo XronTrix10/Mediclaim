@@ -2,8 +2,10 @@ import { useEffect, useState } from 'react'
 import { useParams, Link } from 'react-router-dom'
 import Icon from '../../components/Icon'
 import PageHeader from '../../components/PageHeader'
+import Modal from '../../components/Modal'
+import AuthenticatedFilePreview from '../../components/AuthenticatedFilePreview'
 import { card, button, chip, emptyBox } from '../../lib/ui'
-import { getAuthorizedRecords } from '../../api/doctor'
+import { getAuthorizedRecords, type PatientDocument } from '../../api/doctor'
 import type { HealthEvent } from '../../types'
 import AddPatientRecordModal from '../../components/doctor/AddPatientRecordModal'
 
@@ -12,10 +14,18 @@ function formatDate(iso?: string) {
   return new Date(iso).toLocaleDateString('en-IN', { day: 'numeric', month: 'short', year: 'numeric' })
 }
 
-type RecordKind = 'all' | 'vaccination' | 'condition' | 'medication' | 'allergy' | 'report'
+function formatBytes(bytes?: number) {
+  if (!bytes) return ''
+  if (bytes < 1024) return `${bytes} B`
+  if (bytes < 1024 * 1024) return `${(bytes / 1024).toFixed(1)} KB`
+  return `${(bytes / (1024 * 1024)).toFixed(1)} MB`
+}
+
+type RecordKind = 'all' | 'documents' | 'vaccination' | 'condition' | 'medication' | 'allergy' | 'report'
 
 const KIND_LABELS: Record<string, string> = {
   all: 'All Records',
+  documents: 'Documents & Files',
   vaccination: 'Vaccinations',
   condition: 'Conditions',
   medication: 'Medications',
@@ -24,6 +34,7 @@ const KIND_LABELS: Record<string, string> = {
 }
 
 const KIND_ICON: Record<string, string> = {
+  documents: 'file',
   vaccination: 'syringe',
   condition: 'heart',
   medication: 'pill',
@@ -31,43 +42,186 @@ const KIND_ICON: Record<string, string> = {
   report: 'file',
 }
 
-function RecordChip({ kind, selected, onClick }: { kind: RecordKind; selected: boolean; onClick: () => void }) {
+interface PreviewItem {
+  title: string
+  fileName?: string
+  fileUrl?: string
+  fileType?: string
+  date?: string
+  provider?: string
+  detail?: string
+  event?: HealthEvent
+}
+
+function RecordChip({ kind, selected, count, onClick }: { kind: RecordKind; selected: boolean; count?: number; onClick: () => void }) {
   return (
     <button
       type="button"
       onClick={onClick}
       aria-pressed={selected}
-      className={chip}
+      className={`${chip} ${selected ? 'bg-brand text-white' : ''}`}
     >
-      {KIND_LABELS[kind]}
+      <span>{KIND_LABELS[kind]}</span>
+      {typeof count === 'number' && count > 0 && (
+        <span className={`ml-1.5 rounded-full px-1.5 py-0.2 text-[0.72rem] font-semibold ${selected ? 'bg-white/20 text-white' : 'bg-mist-2 text-ink-soft'}`}>
+          {count}
+        </span>
+      )}
     </button>
   )
 }
 
-function RecordRow({ event }: { event: HealthEvent }) {
+function RecordRow({ event, onPreview }: { event: HealthEvent; onPreview: (item: PreviewItem) => void }) {
   const iconName = (KIND_ICON[event.kind] ?? 'file') as any
+  const hasDoc = !!event.fileUrl
+
   return (
-    <li className="flex items-start gap-4 py-4 first:pt-0 last:pb-0">
+    <li
+      onClick={() => onPreview({
+        title: event.title,
+        fileName: event.fileName,
+        fileUrl: event.fileUrl,
+        fileType: event.fileType,
+        date: event.date,
+        provider: event.provider,
+        detail: event.detail,
+        event: event,
+      })}
+      className="flex items-start gap-4 py-4 first:pt-0 last:pb-0 cursor-pointer hover:bg-mist/40 px-2 rounded-xl transition-colors"
+    >
       <span className="grid size-9 shrink-0 place-items-center rounded-[11px] bg-mist text-ink-soft">
         <Icon name={iconName} size={16} />
       </span>
       <div className="min-w-0 flex-1">
-        <p className="font-semibold text-ink">{event.title}</p>
-        {event.detail && <p className="mt-0.5 text-sm text-ink-soft">{event.detail}</p>}
+        <div className="flex items-center gap-2">
+          <p className="font-semibold text-ink truncate">{event.title}</p>
+          {hasDoc && (
+            <span className="inline-flex items-center gap-1 rounded-md bg-brand-tint px-2 py-0.5 text-xs font-semibold text-brand-deep">
+              <Icon name="file" size={12} />
+              Attached Document
+            </span>
+          )}
+        </div>
+        {event.detail && <p className="mt-0.5 text-sm text-ink-soft line-clamp-2">{event.detail}</p>}
+        {event.provider && <p className="mt-1 text-xs text-ink-faint">Provider: {event.provider}</p>}
       </div>
-      <span className="shrink-0 text-xs text-ink-faint">{formatDate(event.date)}</span>
+      <div className="shrink-0 flex flex-col items-end gap-1.5">
+        <span className="text-xs text-ink-faint">{formatDate(event.date)}</span>
+        {hasDoc && (
+          <button
+            type="button"
+            onClick={(e) => {
+              e.stopPropagation()
+              onPreview({
+                title: event.title,
+                fileName: event.fileName,
+                fileUrl: event.fileUrl,
+                fileType: event.fileType,
+                date: event.date,
+                provider: event.provider,
+                detail: event.detail,
+                event: event,
+              })
+            }}
+            className="inline-flex items-center gap-1 rounded-lg border border-brand/20 bg-brand-tint/60 px-2.5 py-1 text-xs font-semibold text-brand-deep hover:bg-brand-tint transition-colors"
+          >
+            <Icon name="file" size={12} />
+            View Document
+          </button>
+        )}
+      </div>
     </li>
+  )
+}
+
+function DocumentCard({ doc, onPreview }: { doc: PatientDocument; onPreview: (item: PreviewItem) => void }) {
+  const isPdf = doc.fileType === 'pdf' || (doc.fileName || '').toLowerCase().endsWith('.pdf')
+
+  return (
+    <div
+      onClick={() => onPreview({
+        title: doc.title,
+        fileName: doc.fileName,
+        fileUrl: doc.fileUrl,
+        fileType: doc.fileType,
+        date: doc.date,
+        detail: `Type: ${doc.documentType || 'Medical Document'} · Status: ${doc.ocrStatus || 'Verified'}`,
+      })}
+      className="flex items-start justify-between gap-4 rounded-2xl border border-line bg-white p-4 hover:border-brand/40 hover:shadow-xs transition-all cursor-pointer"
+    >
+      <div className="flex items-start gap-3.5 min-w-0">
+        <span className="grid size-11 shrink-0 place-items-center rounded-xl bg-brand-tint text-brand">
+          <Icon name={isPdf ? 'file' : 'image'} size={22} />
+        </span>
+        <div className="min-w-0">
+          <strong className="block text-[0.95rem] font-semibold text-ink truncate">
+            {doc.title || doc.fileName}
+          </strong>
+          <p className="text-xs text-ink-soft truncate mt-0.5">
+            {doc.fileName} {doc.fileSizeBytes ? `· ${formatBytes(doc.fileSizeBytes)}` : ''}
+          </p>
+          <div className="flex items-center gap-2 mt-2">
+            <span className="rounded-md bg-mist px-2 py-0.5 text-xs font-medium text-ink-soft uppercase tracking-wide">
+              {doc.documentType || 'Document'}
+            </span>
+            <span className="text-xs text-ink-faint">
+              {formatDate(doc.date)}
+            </span>
+          </div>
+        </div>
+      </div>
+      <div className="shrink-0 flex items-center gap-2">
+        <button
+          type="button"
+          onClick={(e) => {
+            e.stopPropagation()
+            onPreview({
+              title: doc.title,
+              fileName: doc.fileName,
+              fileUrl: doc.fileUrl,
+              fileType: doc.fileType,
+              date: doc.date,
+              detail: `Type: ${doc.documentType || 'Medical Document'} · Status: ${doc.ocrStatus || 'Verified'}`,
+            })
+          }}
+          className={`${button('primary', 'sm')} gap-1.5`}
+        >
+          <Icon name="file" size={14} />
+          <span>Preview</span>
+        </button>
+        {doc.fileUrl && (
+          <a
+            href={doc.fileUrl}
+            target="_blank"
+            rel="noopener noreferrer"
+            download={doc.fileName || 'document'}
+            onClick={(e) => e.stopPropagation()}
+            className={`${button('ghost', 'sm')} gap-1`}
+            title="Download document"
+          >
+            <Icon name="download" size={14} />
+          </a>
+        )}
+      </div>
+    </div>
   )
 }
 
 export default function DoctorPatientDetail() {
   const { mediclaimId } = useParams<{ mediclaimId: string }>()
-  const [data, setData] = useState<{ patient: any; approvedScopes: string[]; expiresAt: string; records: HealthEvent[] } | null>(null)
+  const [data, setData] = useState<{
+    patient: any
+    approvedScopes: string[]
+    expiresAt: string
+    records: HealthEvent[]
+    documents?: PatientDocument[]
+  } | null>(null)
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState<string | null>(null)
   const [filterKind, setFilterKind] = useState<RecordKind>('all')
   const [addModalOpen, setAddModalOpen] = useState(false)
   const [addKind, setAddKind] = useState<RecordKind>('vaccination')
+  const [previewItem, setPreviewItem] = useState<PreviewItem | null>(null)
 
   function load() {
     if (!mediclaimId) return
@@ -81,10 +235,18 @@ export default function DoctorPatientDetail() {
   useEffect(() => { load() }, [mediclaimId])
 
   const records = data?.records ?? []
-  const filtered = filterKind === 'all' ? records : records.filter((r) => r.kind === filterKind)
+  const documents = data?.documents ?? []
+  const recordsWithDocs = records.filter((r) => r.fileUrl)
+  const totalDocsCount = documents.length + recordsWithDocs.filter((r) => !documents.some((d) => d.fileUrl === r.fileUrl)).length
+
+  const filteredRecords = filterKind === 'all'
+    ? records
+    : filterKind === 'documents'
+    ? []
+    : records.filter((r) => r.kind === filterKind)
 
   function openAdd(kind: RecordKind) {
-    setAddKind(kind === 'all' ? 'vaccination' : kind)
+    setAddKind(kind === 'all' || kind === 'documents' ? 'vaccination' : kind)
     setAddModalOpen(true)
   }
 
@@ -93,7 +255,7 @@ export default function DoctorPatientDetail() {
       <div className="flex items-center gap-2 text-sm text-ink-soft">
         <Link to="/app/doctor/patients" className="hover:text-brand">My Patients</Link>
         <Icon name="chevron-right" size={14} />
-        <span className="text-ink">{mediclaimId}</span>
+        <span className="text-ink font-medium">{mediclaimId}</span>
       </div>
 
       {loading ? (
@@ -122,7 +284,7 @@ export default function DoctorPatientDetail() {
           </PageHeader>
 
           <div className={card}>
-            <div className="grid grid-cols-2 gap-4 sm:grid-cols-4 text-sm">
+            <div className="grid grid-cols-2 gap-4 sm:grid-cols-5 text-sm">
               <div>
                 <p className="text-xs text-ink-faint">Gender</p>
                 <p className="font-medium text-ink capitalize">{data.patient?.gender ?? '—'}</p>
@@ -136,6 +298,12 @@ export default function DoctorPatientDetail() {
                 <p className="font-medium text-ink">{data.patient?.bloodGroup ?? '—'}</p>
               </div>
               <div>
+                <p className="text-xs text-ink-faint">Documents Available</p>
+                <p className="font-semibold text-brand">
+                  {totalDocsCount} {totalDocsCount === 1 ? 'file' : 'files'}
+                </p>
+              </div>
+              <div>
                 <p className="text-xs text-ink-faint">Consent scope</p>
                 <div className="flex flex-wrap gap-1 mt-1">
                   {data.approvedScopes?.map((s) => (
@@ -146,18 +314,106 @@ export default function DoctorPatientDetail() {
             </div>
           </div>
 
-          {/* Records */}
+          {/* Quick Documents Banner if files exist */}
+          {documents.length > 0 && filterKind !== 'documents' && (
+            <div className="rounded-[20px] border border-brand/20 bg-brand-tint/30 p-5">
+              <div className="flex items-center justify-between mb-3">
+                <div className="flex items-center gap-2">
+                  <Icon name="file" size={18} className="text-brand" />
+                  <h3 className="font-semibold text-ink text-sm sm:text-base">
+                    Patient Medical Documents ({documents.length})
+                  </h3>
+                </div>
+                <button
+                  type="button"
+                  onClick={() => setFilterKind('documents')}
+                  className="text-xs font-semibold text-brand hover:underline"
+                >
+                  View all documents →
+                </button>
+              </div>
+              <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-3">
+                {documents.slice(0, 3).map((doc) => (
+                  <div
+                    key={doc.id}
+                    onClick={() => setPreviewItem({
+                      title: doc.title,
+                      fileName: doc.fileName,
+                      fileUrl: doc.fileUrl,
+                      fileType: doc.fileType,
+                      date: doc.date,
+                      detail: `Type: ${doc.documentType || 'Medical Document'} · Status: ${doc.ocrStatus || 'Verified'}`,
+                    })}
+                    className="flex items-center gap-3 rounded-xl border border-line bg-white p-3 cursor-pointer hover:border-brand/40 transition-colors"
+                  >
+                    <span className="grid size-9 shrink-0 place-items-center rounded-lg bg-brand-tint text-brand">
+                      <Icon name="file" size={16} />
+                    </span>
+                    <div className="min-w-0 flex-1">
+                      <p className="truncate text-xs font-semibold text-ink">{doc.title || doc.fileName}</p>
+                      <span className="text-[0.72rem] text-ink-faint">{formatDate(doc.date)}</span>
+                    </div>
+                    <span className="text-xs font-semibold text-brand">View</span>
+                  </div>
+                ))}
+              </div>
+            </div>
+          )}
+
+          {/* Records & Documents container */}
           <div className={card}>
             <div className="mb-5 flex flex-wrap items-center justify-between gap-3">
-              <h2 className="text-[1.1rem] font-semibold text-ink">Records</h2>
+              <h2 className="text-[1.1rem] font-semibold text-ink">
+                {filterKind === 'documents' ? 'Medical Documents & Scans' : 'Clinical Records'}
+              </h2>
               <div className="flex flex-wrap gap-2">
-                {(['all', 'vaccination', 'condition', 'medication', 'allergy', 'report'] as RecordKind[]).map((k) => (
-                  <RecordChip key={k} kind={k} selected={filterKind === k} onClick={() => setFilterKind(k)} />
+                {(['all', 'documents', 'vaccination', 'condition', 'medication', 'allergy', 'report'] as RecordKind[]).map((k) => (
+                  <RecordChip
+                    key={k}
+                    kind={k}
+                    selected={filterKind === k}
+                    count={k === 'documents' ? totalDocsCount : undefined}
+                    onClick={() => setFilterKind(k)}
+                  />
                 ))}
               </div>
             </div>
 
-            {filtered.length === 0 ? (
+            {/* If documents filter is active */}
+            {filterKind === 'documents' ? (
+              documents.length === 0 && recordsWithDocs.length === 0 ? (
+                <div className={emptyBox}>
+                  <Icon name="file" size={32} className="mx-auto text-ink-faint" />
+                  <p className="mt-3 text-sm font-medium text-ink">No documents found for this patient.</p>
+                  <p className="mt-1 text-xs text-ink-soft">Patient has not uploaded any prescription or diagnostic documents yet.</p>
+                </div>
+              ) : (
+                <div className="grid gap-3 sm:grid-cols-2">
+                  {documents.map((doc) => (
+                    <DocumentCard key={doc.id} doc={doc} onPreview={setPreviewItem} />
+                  ))}
+                  {recordsWithDocs
+                    .filter((r) => !documents.some((d) => d.fileUrl === r.fileUrl))
+                    .map((r) => (
+                      <DocumentCard
+                        key={r.id}
+                        doc={{
+                          id: r.documentId || r.id,
+                          documentId: r.documentId || r.id,
+                          title: r.title,
+                          fileName: r.fileName || `${r.title}.pdf`,
+                          fileType: r.fileType || 'pdf',
+                          fileSizeBytes: r.fileSizeBytes,
+                          fileUrl: r.fileUrl || '',
+                          documentType: r.kind,
+                          date: r.date,
+                        }}
+                        onPreview={setPreviewItem}
+                      />
+                    ))}
+                </div>
+              )
+            ) : filteredRecords.length === 0 ? (
               <div className={emptyBox}>
                 <Icon name="file" size={28} className="mx-auto text-ink-faint" />
                 <p className="mt-2 text-sm text-ink-soft">
@@ -170,17 +426,96 @@ export default function DoctorPatientDetail() {
               </div>
             ) : (
               <ul className="divide-y divide-line">
-                {filtered.map((r) => <RecordRow key={r.id} event={r} />)}
+                {filteredRecords.map((r) => (
+                  <RecordRow key={r.id} event={r} onPreview={setPreviewItem} />
+                ))}
               </ul>
             )}
           </div>
         </>
       ) : null}
 
+      {/* Document & Record Details Modal */}
+      {previewItem && (
+        <Modal
+          open={!!previewItem}
+          onClose={() => setPreviewItem(null)}
+          title={previewItem.title}
+          size="lg"
+        >
+          <div className="space-y-4">
+            <div className="flex flex-wrap items-center justify-between gap-3 border-b border-line pb-3 text-sm">
+              <div>
+                <span className="text-xs text-ink-faint block">Document / Record</span>
+                <strong className="text-ink font-semibold">{previewItem.fileName || previewItem.title}</strong>
+              </div>
+              {previewItem.date && (
+                <div>
+                  <span className="text-xs text-ink-faint block">Date</span>
+                  <span className="text-ink font-medium">{formatDate(previewItem.date)}</span>
+                </div>
+              )}
+              {previewItem.provider && (
+                <div>
+                  <span className="text-xs text-ink-faint block">Provider</span>
+                  <span className="text-ink font-medium">{previewItem.provider}</span>
+                </div>
+              )}
+            </div>
+
+            {previewItem.detail && (
+              <div className="rounded-xl bg-mist p-3.5 text-sm text-ink-soft leading-relaxed">
+                {previewItem.detail}
+              </div>
+            )}
+
+            {/* Embedded Document Preview */}
+            {previewItem.fileUrl ? (
+              <div className="mt-4">
+                <div className="mb-2 flex items-center justify-between">
+                  <span className="text-xs uppercase font-semibold tracking-wider text-ink-faint">
+                    Attached Medical Document
+                  </span>
+                  <a
+                    href={previewItem.fileUrl}
+                    target="_blank"
+                    rel="noopener noreferrer"
+                    download={previewItem.fileName || 'medical_document'}
+                    className={`${button('soft', 'sm')} gap-1`}
+                  >
+                    <Icon name="download" size={14} />
+                    Download File
+                  </a>
+                </div>
+                <AuthenticatedFilePreview
+                  fileUrl={previewItem.fileUrl}
+                  fileName={previewItem.fileName}
+                  fileType={previewItem.fileType}
+                />
+              </div>
+            ) : (
+              <div className="rounded-[16px] border border-line bg-mist p-6 text-center text-sm text-ink-soft">
+                No electronic file attachment linked with this record.
+              </div>
+            )}
+
+            <div className="mt-5 flex justify-end">
+              <button
+                type="button"
+                onClick={() => setPreviewItem(null)}
+                className={button('ghost', 'sm')}
+              >
+                Close
+              </button>
+            </div>
+          </div>
+        </Modal>
+      )}
+
       {addModalOpen && mediclaimId && (
         <AddPatientRecordModal
           mediclaimId={mediclaimId}
-          initialKind={addKind === 'all' ? 'vaccination' : addKind}
+          initialKind={addKind === 'all' || addKind === 'documents' ? 'vaccination' : addKind}
           onClose={() => setAddModalOpen(false)}
           onAdded={() => { setAddModalOpen(false); load() }}
         />

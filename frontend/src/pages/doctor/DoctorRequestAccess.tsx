@@ -12,6 +12,7 @@ const SCOPES = [
   { value: 'medication', label: 'Medications' },
   { value: 'allergy', label: 'Allergies' },
   { value: 'report', label: 'Reports' },
+  { value: 'document', label: 'Documents & Files' },
 ]
 
 const DURATIONS = [
@@ -28,7 +29,7 @@ type Step = 'search' | 'configure' | 'sent'
 export default function DoctorRequestAccess() {
   const [step, setStep] = useState<Step>('search')
   const [mediclaimId, setMediclaimId] = useState('')
-  const [selectedScopes, setSelectedScopes] = useState<string[]>(['vaccination', 'condition', 'medication', 'allergy', 'report'])
+  const [selectedScopes, setSelectedScopes] = useState<string[]>(['vaccination', 'condition', 'medication', 'allergy', 'report', 'document'])
   const [duration, setDuration] = useState('24')
   const [purpose, setPurpose] = useState('')
   const [loading, setLoading] = useState(false)

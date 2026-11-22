@@ -316,7 +316,7 @@ def download_document_content(
         current_user.patient_profile_id
         and str(doc["patient_id"]) == str(current_user.patient_profile_id).replace("pat-", "").replace("pat_", "")
     )
-    is_privileged = any(r in ("admin", "doctor", "practitioner") for r in (current_user.roles or []))
+    is_privileged = current_user.has_role("admin", "doctor", "practitioner", "hospital_admin", "organization")
     if not is_owner and not is_privileged:
         raise APIProblemException(
             status_code=status.HTTP_403_FORBIDDEN,

@@ -77,6 +77,20 @@ export async function getAuthorizedPatients(): Promise<DoctorPatientSummary[]> {
   return res.data
 }
 
+export interface PatientDocument {
+  id: string
+  documentId: string
+  title: string
+  fileName: string
+  fileType: 'pdf' | 'image' | string
+  fileSizeBytes?: number
+  fileUrl: string
+  documentType?: string
+  date?: string
+  createdAt?: string
+  ocrStatus?: string
+}
+
 export async function getAuthorizedPatient(mediclaimId: string): Promise<any> {
   const res = await request<{ status: string; data: any }>(`/doctor/patients/${mediclaimId}`)
   return res.data
@@ -85,12 +99,34 @@ export async function getAuthorizedPatient(mediclaimId: string): Promise<any> {
 export async function getAuthorizedRecords(
   mediclaimId: string,
   kind?: string
-): Promise<{ patient: any; approvedScopes: string[]; expiresAt: string; records: HealthEvent[] }> {
+): Promise<{
+  patient: any
+  approvedScopes: string[]
+  expiresAt: string
+  records: HealthEvent[]
+  documents?: PatientDocument[]
+}> {
   const q = kind ? `?kind=${encodeURIComponent(kind)}` : ''
   const res = await request<{
     status: string
-    data: { patient: any; approvedScopes: string[]; expiresAt: string; records: HealthEvent[] }
+    data: {
+      patient: any
+      approvedScopes: string[]
+      expiresAt: string
+      records: HealthEvent[]
+      documents?: PatientDocument[]
+    }
   }>(`/doctor/patients/${mediclaimId}/records${q}`)
+  return res.data
+}
+
+export async function getAuthorizedDocuments(
+  mediclaimId: string
+): Promise<{ patient: any; documents: PatientDocument[] }> {
+  const res = await request<{
+    status: string
+    data: { patient: any; documents: PatientDocument[] }
+  }>(`/doctor/patients/${mediclaimId}/documents`)
   return res.data
 }
 
