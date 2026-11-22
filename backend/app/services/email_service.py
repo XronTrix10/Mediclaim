@@ -9,7 +9,7 @@ BREVO_API_URL = "https://api.brevo.com/v3/smtp/email"
 
 
 def send_registration_email(
-    to_email: str,
+    to_email: Optional[str],
     recipient_name: str,
     mediclaim_id: str
 ) -> bool:
@@ -22,9 +22,9 @@ def send_registration_email(
     - Contains message explaining that mobile verification and administrator approval are still pending
     - Never raises an unhandled exception: logs failure and returns False so registration is never rolled back or interrupted.
     """
-    if not BREVO_API_KEY or not BREVO_SENDER_EMAIL:
+    if not to_email or not BREVO_API_KEY or not BREVO_SENDER_EMAIL:
         logger.warning(
-            "Brevo credentials missing (BREVO_API_KEY or BREVO_SENDER_EMAIL not configured). "
+            "Brevo credentials missing or recipient email absent. "
             "Skipping registration email to %s.",
             to_email
         )

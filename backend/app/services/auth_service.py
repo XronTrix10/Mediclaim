@@ -52,13 +52,19 @@ def register_user(payload) -> Dict[str, Any]:
     otp = generate_otp()
     user_uuid = uuid.uuid4()
     user_id = f"usr_{user_uuid}"
-    email_clean = str(payload.email).strip().lower()
+    email_clean = str(payload.email).strip().lower() if getattr(payload, "email", None) else None
 
     with get_db() as conn:
-        duplicate = conn.execute(
-            "SELECT phone, aadhaar_number, email FROM users WHERE phone = %s OR aadhaar_number = %s OR email = %s",
-            (payload.phone, payload.aadhaarNumber, email_clean)
-        ).fetchone()
+        if email_clean:
+            duplicate = conn.execute(
+                "SELECT phone, aadhaar_number, email FROM users WHERE phone = %s OR aadhaar_number = %s OR email = %s",
+                (payload.phone, payload.aadhaarNumber, email_clean)
+            ).fetchone()
+        else:
+            duplicate = conn.execute(
+                "SELECT phone, aadhaar_number, email FROM users WHERE phone = %s OR aadhaar_number = %s",
+                (payload.phone, payload.aadhaarNumber)
+            ).fetchone()
         if duplicate:
             if duplicate.get("email") and duplicate.get("email").lower() == email_clean:
                 raise APIProblemException(
@@ -118,19 +124,20 @@ def register_user(payload) -> Dict[str, Any]:
 
     # Send generated Mediclaim ID to the registered email after database transaction commits.
     # Email failure must not roll back or interrupt successful patient registration.
-    try:
-        send_registration_email(
-            to_email=email_clean,
-            recipient_name=payload.fullName,
-            mediclaim_id=formatted_mediclaim_id
-        )
-    except Exception as exc:
-        logger.error(
-            "Unexpected error dispatching registration email to %s: %s",
-            email_clean,
-            exc,
-            exc_info=True
-        )
+    if email_clean:
+        try:
+            send_registration_email(
+                to_email=email_clean,
+                recipient_name=payload.fullName,
+                mediclaim_id=formatted_mediclaim_id
+            )
+        except Exception as exc:
+            logger.error(
+                "Unexpected error dispatching registration email to %s: %s",
+                email_clean,
+                exc,
+                exc_info=True
+            )
 
     return {
         "userId": user_id,

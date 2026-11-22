@@ -5,7 +5,8 @@ from pydantic import BaseModel, Field, ConfigDict
 class RegisterRequest(BaseModel):
     model_config = ConfigDict(extra="forbid")
     fullName: str = Field(min_length=2, max_length=120)
-    email: str = Field(
+    email: Optional[str] = Field(
+        default=None,
         min_length=5,
         max_length=255,
         pattern=r"^[^@\s]+@[^@\s]+\.[^@\s]+$"
