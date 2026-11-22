@@ -11,7 +11,8 @@ from app.exceptions import APIProblemException
 from app.security import (
     AuthenticatedUser, format_mediclaim_id, normalize_mediclaim_id,
     hash_password, verify_password, generate_otp, hash_otp, verify_otp,
-    generate_mediclaim_id, create_access_token
+    generate_mediclaim_id, create_access_token,
+    generate_doctor_id, normalize_doctor_id
 )
 from app.services.audit_service import record_audit
 from app.schemas.records import KindType, MedicationItem
@@ -45,31 +46,58 @@ def _new_public_id(prefix: str = "doc") -> str:
     rand = secrets.token_hex(6)
     return rand[:12]
 
+def _get_unique_doctor_id(conn) -> str:
+    for _ in range(50):
+        candidate = generate_doctor_id()
+        exists = conn.execute(
+            "SELECT 1 FROM users WHERE doctor_id = %s UNION SELECT 1 FROM practitioner_profiles WHERE doctor_id = %s",
+            (candidate, candidate)
+        ).fetchone()
+        if not exists:
+            return candidate
+    return f"DR-{secrets.randbelow(90000) + 10000}"
+
 def ensure_practitioner_profile(doctor_user: AuthenticatedUser) -> str:
     """Ensures a practitioner_profiles row exists for doctor_user and returns its id."""
     raw_user_id = doctor_user.raw_uuid
     with get_db() as conn:
         existing = conn.execute(
-            "SELECT id FROM practitioner_profiles WHERE user_id = %s",
+            "SELECT id, doctor_id FROM practitioner_profiles WHERE user_id = %s",
             (raw_user_id,)
         ).fetchone()
         if existing:
+            if not existing["doctor_id"]:
+                doc_id = _get_unique_doctor_id(conn)
+                conn.execute(
+                    "UPDATE practitioner_profiles SET doctor_id = %s WHERE id = %s",
+                    (doc_id, str(existing["id"]))
+                )
+                conn.execute(
+                    "UPDATE users SET doctor_id = %s WHERE id = %s AND doctor_id IS NULL",
+                    (doc_id, raw_user_id)
+                )
             return str(existing["id"])
 
         # Auto-provision baseline practitioner profile
         doc_uuid = uuid.uuid4()
         public_id = _new_public_id("doc")
         reg_no = f"MCI-{secrets.randbelow(900000) + 100000}"
+        doc_id = _get_unique_doctor_id(conn)
 
         conn.execute("""
             INSERT INTO practitioner_profiles (
-                id, public_id, user_id, registration_number, specialization,
+                id, public_id, doctor_id, user_id, registration_number, specialization,
                 qualification, created_at
             ) VALUES (
-                %s, %s, %s, %s, 'General Medicine',
+                %s, %s, %s, %s, %s, 'General Medicine',
                 'MBBS', now()
             )
-        """, (str(doc_uuid), public_id, raw_user_id, reg_no))
+        """, (str(doc_uuid), public_id, doc_id, raw_user_id, reg_no))
+
+        conn.execute(
+            "UPDATE users SET doctor_id = %s WHERE id = %s AND doctor_id IS NULL",
+            (doc_id, raw_user_id)
+        )
 
     return str(doc_uuid)
 
@@ -676,27 +704,17 @@ def register_doctor(payload) -> Dict[str, Any]:
                 code="RECORD_CONFLICT",
             )
 
-        # Allocate unique Mediclaim ID
-        for _ in range(50):
-            candidate = generate_mediclaim_id()
-            exists = conn.execute(
-                "SELECT 1 FROM users WHERE mediclaim_id = %s OR public_id = %s",
-                (candidate, candidate)
-            ).fetchone()
-            if not exists:
-                med_id = candidate
-                break
-        else:
-            med_id = secrets.token_hex(6)[:12]
+        # Allocate unique Doctor ID (starting with DR-XXXXX)
+        doc_id = _get_unique_doctor_id(conn)
 
         user_uuid = uuid.uuid4()
         user_id_str = str(user_uuid)
         pub_id = secrets.token_hex(6)[:12]
 
-        # Insert user (admin_verified=false per administrative verification workflow)
+        # Insert user (admin_verified=false per administrative verification workflow, mediclaim_id=null)
         conn.execute("""
             INSERT INTO users (
-                id, public_id, mediclaim_id, full_name, phone, aadhaar_number,
+                id, public_id, doctor_id, full_name, phone, aadhaar_number,
                 password_hash, admin_verified, profile_complete, is_active,
                 created_at, updated_at
             ) VALUES (
@@ -705,7 +723,7 @@ def register_doctor(payload) -> Dict[str, Any]:
                 now(), now()
             )
         """, (
-            user_id_str, pub_id, med_id, payload.fullName.strip(),
+            user_id_str, pub_id, doc_id, payload.fullName.strip(),
             clean_phone, clean_aadhaar,
             hash_password(payload.password)
         ))
@@ -717,19 +735,19 @@ def register_doctor(payload) -> Dict[str, Any]:
             ON CONFLICT (user_id, role) DO NOTHING
         """, (user_id_str,))
 
-        # Insert practitioner profile
+        # Insert practitioner profile with doctor_id
         doc_prof_uuid = uuid.uuid4()
         qual = f"{payload.yearsOfExperience} yrs exp" if payload.yearsOfExperience else "MBBS"
         conn.execute("""
             INSERT INTO practitioner_profiles (
-                id, public_id, user_id, registration_number, specialization,
+                id, public_id, doctor_id, user_id, registration_number, specialization,
                 qualification, created_at
             ) VALUES (
-                %s, %s, %s, %s, %s,
+                %s, %s, %s, %s, %s, %s,
                 %s, now()
             )
         """, (
-            str(doc_prof_uuid), secrets.token_hex(6)[:12], user_id_str,
+            str(doc_prof_uuid), secrets.token_hex(6)[:12], doc_id, user_id_str,
             payload.medicalLicenseNumber.strip(), payload.specialization.strip(),
             qual
         ))
@@ -762,6 +780,7 @@ def register_doctor(payload) -> Dict[str, Any]:
 
     return {
         "userId": f"usr_{user_uuid}",
+        "doctorId": doc_id,
         "phone": clean_phone,
         "accountStatus": "pending_admin_approval",
         "otpSent": False,
@@ -773,25 +792,53 @@ def register_doctor(payload) -> Dict[str, Any]:
 def doctor_request_otp(payload) -> Dict[str, Any]:
     now = int(time.time())
     otp = generate_otp()
-    clean_phone = payload.phone.strip()
-    alt_phone = f"+91{clean_phone.replace('+91', '').strip()}"
 
     with get_db() as conn:
-        user = conn.execute("""
-            SELECT u.id, u.phone, u.full_name, u.admin_verified
-            FROM users u
-            JOIN user_roles ur ON ur.user_id = u.id
-            WHERE (u.phone = %s OR u.phone = %s)
-              AND ur.role IN ('practitioner', 'doctor')
-            LIMIT 1
-        """, (clean_phone, alt_phone)).fetchone()
-
-        if not user:
+        if getattr(payload, "doctorId", None) and payload.doctorId.strip():
+            clean_doc = normalize_doctor_id(payload.doctorId)
+            user = conn.execute("""
+                SELECT u.id, u.phone, u.full_name, u.admin_verified,
+                       COALESCE(u.doctor_id, doc.doctor_id) AS doctor_id
+                FROM users u
+                JOIN user_roles ur ON ur.user_id = u.id
+                LEFT JOIN practitioner_profiles doc ON doc.user_id = u.id
+                WHERE (u.doctor_id = %s OR doc.doctor_id = %s)
+                  AND ur.role IN ('practitioner', 'doctor')
+                LIMIT 1
+            """, (clean_doc, clean_doc)).fetchone()
+            if not user:
+                raise APIProblemException(
+                    status_code=status.HTTP_401_UNAUTHORIZED,
+                    title="Account Not Found",
+                    detail=f"No practitioner account found for Doctor ID '{payload.doctorId}'.",
+                    code="INVALID_CREDENTIALS",
+                )
+        elif getattr(payload, "phone", None) and payload.phone.strip():
+            clean_phone = payload.phone.strip()
+            alt_phone = f"+91{clean_phone.replace('+91', '').strip()}"
+            user = conn.execute("""
+                SELECT u.id, u.phone, u.full_name, u.admin_verified,
+                       COALESCE(u.doctor_id, doc.doctor_id) AS doctor_id
+                FROM users u
+                JOIN user_roles ur ON ur.user_id = u.id
+                LEFT JOIN practitioner_profiles doc ON doc.user_id = u.id
+                WHERE (u.phone = %s OR u.phone = %s)
+                  AND ur.role IN ('practitioner', 'doctor')
+                LIMIT 1
+            """, (clean_phone, alt_phone)).fetchone()
+            if not user:
+                raise APIProblemException(
+                    status_code=status.HTTP_401_UNAUTHORIZED,
+                    title="Account Not Found",
+                    detail="No practitioner account found for this mobile number.",
+                    code="INVALID_CREDENTIALS",
+                )
+        else:
             raise APIProblemException(
-                status_code=status.HTTP_401_UNAUTHORIZED,
-                title="Account Not Found",
-                detail="No practitioner account found for this mobile number.",
-                code="INVALID_CREDENTIALS",
+                status_code=status.HTTP_400_BAD_REQUEST,
+                title="Missing Identifier",
+                detail="Doctor ID (DR-XXXXX) or registered mobile number is required.",
+                code="BAD_REQUEST",
             )
 
         conn.execute("""
@@ -813,25 +860,53 @@ def doctor_request_otp(payload) -> Dict[str, Any]:
 
 def doctor_verify_otp(payload) -> Dict[str, Any]:
     now = int(time.time())
-    clean_phone = payload.phone.strip()
-    alt_phone = f"+91{clean_phone.replace('+91', '').strip()}"
 
     with get_db() as conn:
-        user = conn.execute("""
-            SELECT u.*
-            FROM users u
-            JOIN user_roles ur ON ur.user_id = u.id
-            WHERE (u.phone = %s OR u.phone = %s)
-              AND ur.role IN ('practitioner', 'doctor')
-            LIMIT 1
-        """, (clean_phone, alt_phone)).fetchone()
-
-        if not user:
+        if getattr(payload, "doctorId", None) and payload.doctorId.strip():
+            clean_doc = normalize_doctor_id(payload.doctorId)
+            user = conn.execute("""
+                SELECT u.*,
+                       COALESCE(u.doctor_id, doc.doctor_id) AS resolved_doctor_id
+                FROM users u
+                JOIN user_roles ur ON ur.user_id = u.id
+                LEFT JOIN practitioner_profiles doc ON doc.user_id = u.id
+                WHERE (u.doctor_id = %s OR doc.doctor_id = %s)
+                  AND ur.role IN ('practitioner', 'doctor')
+                LIMIT 1
+            """, (clean_doc, clean_doc)).fetchone()
+            if not user:
+                raise APIProblemException(
+                    status_code=status.HTTP_401_UNAUTHORIZED,
+                    title="Account Not Found",
+                    detail=f"No practitioner account found for Doctor ID '{payload.doctorId}'.",
+                    code="INVALID_CREDENTIALS",
+                )
+        elif getattr(payload, "phone", None) and payload.phone.strip():
+            clean_phone = payload.phone.strip()
+            alt_phone = f"+91{clean_phone.replace('+91', '').strip()}"
+            user = conn.execute("""
+                SELECT u.*,
+                       COALESCE(u.doctor_id, doc.doctor_id) AS resolved_doctor_id
+                FROM users u
+                JOIN user_roles ur ON ur.user_id = u.id
+                LEFT JOIN practitioner_profiles doc ON doc.user_id = u.id
+                WHERE (u.phone = %s OR u.phone = %s)
+                  AND ur.role IN ('practitioner', 'doctor')
+                LIMIT 1
+            """, (clean_phone, alt_phone)).fetchone()
+            if not user:
+                raise APIProblemException(
+                    status_code=status.HTTP_401_UNAUTHORIZED,
+                    title="Account Not Found",
+                    detail="No practitioner account found for this mobile number.",
+                    code="INVALID_CREDENTIALS",
+                )
+        else:
             raise APIProblemException(
-                status_code=status.HTTP_401_UNAUTHORIZED,
-                title="Account Not Found",
-                detail="No practitioner account found for this mobile number.",
-                code="INVALID_CREDENTIALS",
+                status_code=status.HTTP_400_BAD_REQUEST,
+                title="Missing Identifier",
+                detail="Doctor ID (DR-XXXXX) or registered mobile number is required.",
+                code="BAD_REQUEST",
             )
 
         if not user["otp_hash"] or not user["otp_expires_at"] or now > user["otp_expires_at"]:
@@ -878,6 +953,7 @@ def doctor_verify_otp(payload) -> Dict[str, Any]:
 
     formatted_user_id = f"usr_{user['id']}"
     token = create_access_token(formatted_user_id, role="practitioner")
+    doc_id_val = user.get("resolved_doctor_id") or user.get("doctor_id")
 
     return {
         "accessToken": token,
@@ -889,7 +965,8 @@ def doctor_verify_otp(payload) -> Dict[str, Any]:
             "email": user.get("email"),
             "phone": user["phone"],
             "role": "practitioner",
-            "mediclaimId": format_mediclaim_id(user.get("mediclaim_id") or ""),
+            "doctorId": doc_id_val,
+            "mediclaimId": None,
             "isActive": bool(user["is_active"]),
             "adminVerified": bool(user["admin_verified"]),
             "isProfileComplete": bool(user["profile_complete"]),
@@ -898,19 +975,23 @@ def doctor_verify_otp(payload) -> Dict[str, Any]:
 
 
 def doctor_login(payload) -> Dict[str, Any]:
-    if payload.otp and payload.phone:
+    if payload.otp and (getattr(payload, "doctorId", None) or getattr(payload, "phone", None)):
         return doctor_verify_otp(payload)
 
     with get_db() as conn:
-        if payload.phone:
+        if getattr(payload, "doctorId", None) and payload.doctorId.strip():
+            clean_d = normalize_doctor_id(payload.doctorId)
+            clause = "(u.doctor_id = %s OR doc.doctor_id = %s)"
+            query_params: tuple = (clean_d, clean_d)
+        elif payload.phone:
             clean_p = payload.phone.strip()
             alt_p = f"+91{clean_p.replace('+91', '').strip()}"
             clause = "(u.phone = %s OR u.phone = %s)"
-            query_params: tuple = (clean_p, alt_p)
+            query_params = (clean_p, alt_p)
         elif payload.email:
             clause = "u.email ILIKE %s"
             query_params = (payload.email.strip(),)
-        elif payload.mediclaimId:
+        elif getattr(payload, "mediclaimId", None) and payload.mediclaimId:
             clean_m = normalize_mediclaim_id(payload.mediclaimId)
             clause = "(u.mediclaim_id = %s OR u.public_id = %s)"
             query_params = (clean_m, clean_m)
@@ -918,14 +999,16 @@ def doctor_login(payload) -> Dict[str, Any]:
             raise APIProblemException(
                 status_code=status.HTTP_400_BAD_REQUEST,
                 title="Missing Identifier",
-                detail="Phone number, email, or Mediclaim ID is required.",
+                detail="Doctor ID (DR-XXXXX), phone number, or email is required.",
                 code="BAD_REQUEST",
             )
 
         user = conn.execute(f"""
-            SELECT u.*
+            SELECT u.*,
+                   COALESCE(u.doctor_id, doc.doctor_id) AS resolved_doctor_id
             FROM users u
             JOIN user_roles ur ON ur.user_id = u.id
+            LEFT JOIN practitioner_profiles doc ON doc.user_id = u.id
             WHERE {clause}
               AND ur.role IN ('practitioner', 'doctor')
             LIMIT 1
@@ -957,6 +1040,7 @@ def doctor_login(payload) -> Dict[str, Any]:
 
     formatted_user_id = f"usr_{user['id']}"
     token = create_access_token(formatted_user_id, role="practitioner")
+    doc_id_val = user.get("resolved_doctor_id") or user.get("doctor_id")
 
     return {
         "accessToken": token,
@@ -968,7 +1052,8 @@ def doctor_login(payload) -> Dict[str, Any]:
             "email": user.get("email"),
             "phone": user["phone"],
             "role": "practitioner",
-            "mediclaimId": format_mediclaim_id(user.get("mediclaim_id") or ""),
+            "doctorId": doc_id_val,
+            "mediclaimId": None,
             "isActive": bool(user["is_active"]),
             "adminVerified": bool(user["admin_verified"]),
             "isProfileComplete": bool(user["profile_complete"]),

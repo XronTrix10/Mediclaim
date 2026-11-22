@@ -11,7 +11,8 @@ from app.exceptions import APIProblemException
 from app.security import (
     hash_password, verify_password, generate_otp, hash_otp,
     verify_otp, normalize_mediclaim_id, format_mediclaim_id,
-    generate_mediclaim_id, create_access_token
+    generate_mediclaim_id, create_access_token,
+    normalize_doctor_id, normalize_hospital_id
 )
 
 logger = logging.getLogger("mediclaim.auth")
@@ -183,14 +184,28 @@ def verify_user_otp(payload) -> Dict[str, Any]:
 
 
 def login_user(payload) -> Dict[str, Any]:
-    mediclaim_id = normalize_mediclaim_id(payload.mediclaimId)
+    raw_id = payload.mediclaimId or getattr(payload, "identifier", None) or ""
+    clean_id = raw_id.strip()
+    is_doctor = clean_id.upper().startswith("DR-")
+    is_hospital = clean_id.upper().startswith("HS-")
+
+    if is_doctor:
+        lookup_id = normalize_doctor_id(clean_id)
+        query = "SELECT * FROM users WHERE doctor_id = %s"
+        params = (lookup_id,)
+    elif is_hospital:
+        lookup_id = normalize_hospital_id(clean_id)
+        query = "SELECT * FROM users WHERE hospital_id = %s"
+        params = (lookup_id,)
+    else:
+        mediclaim_id = normalize_mediclaim_id(clean_id)
+        query = "SELECT * FROM users WHERE mediclaim_id = %s OR public_id = %s"
+        params = (mediclaim_id, mediclaim_id)
+
     now = int(time.time())
 
     with get_db() as conn:
-        user = conn.execute(
-            "SELECT * FROM users WHERE mediclaim_id = %s OR public_id = %s",
-            (mediclaim_id, mediclaim_id)
-        ).fetchone()
+        user = conn.execute(query, params).fetchone()
 
     # Avoid enumeration: generic credential error
     if not user:
@@ -268,7 +283,8 @@ def login_user(payload) -> Dict[str, Any]:
         role = role_row["role"] if role_row else "patient"
 
     formatted_user_id = f"usr_{user['id']}"
-    med_id_val = user.get("mediclaim_id") or user.get("public_id") or mediclaim_id
+    med_id_val = user.get("mediclaim_id")
+    formatted_med_id = format_mediclaim_id(med_id_val) if (med_id_val and len(str(med_id_val).replace(" ", "")) == 12) else None
     token = create_access_token(formatted_user_id, role=role)
 
     return {
@@ -281,7 +297,9 @@ def login_user(payload) -> Dict[str, Any]:
             "email": user.get("email"),
             "phone": user["phone"],
             "role": role,
-            "mediclaimId": format_mediclaim_id(med_id_val),
+            "mediclaimId": formatted_med_id,
+            "doctorId": user.get("doctor_id"),
+            "hospitalId": user.get("hospital_id"),
             "isActive": bool(user["is_active"]),
             "adminVerified": bool(user["admin_verified"]),
             "isProfileComplete": bool(user["profile_complete"]),
@@ -290,15 +308,29 @@ def login_user(payload) -> Dict[str, Any]:
 
 
 def request_login_otp(payload) -> Dict[str, Any]:
-    mediclaim_id = normalize_mediclaim_id(payload.mediclaimId)
+    raw_id = payload.mediclaimId or getattr(payload, "identifier", None) or ""
+    clean_id = raw_id.strip()
+    is_doctor = clean_id.upper().startswith("DR-")
+    is_hospital = clean_id.upper().startswith("HS-")
+
+    if is_doctor:
+        lookup_id = normalize_doctor_id(clean_id)
+        query = "SELECT id, phone FROM users WHERE doctor_id = %s"
+        params = (lookup_id,)
+    elif is_hospital:
+        lookup_id = normalize_hospital_id(clean_id)
+        query = "SELECT id, phone FROM users WHERE hospital_id = %s"
+        params = (lookup_id,)
+    else:
+        mediclaim_id = normalize_mediclaim_id(clean_id)
+        query = "SELECT id, phone FROM users WHERE mediclaim_id = %s OR public_id = %s"
+        params = (mediclaim_id, mediclaim_id)
+
     now = int(time.time())
     otp = generate_otp()
 
     with get_db() as conn:
-        user = conn.execute(
-            "SELECT id, phone FROM users WHERE mediclaim_id = %s OR public_id = %s",
-            (mediclaim_id, mediclaim_id)
-        ).fetchone()
+        user = conn.execute(query, params).fetchone()
 
         if not user:
             # Mask timing to prevent enumeration
@@ -496,7 +528,9 @@ def login_admin(payload) -> Dict[str, Any]:
             "email": user.get("email"),
             "phone": user["phone"],
             "role": "admin",
-            "mediclaimId": format_mediclaim_id(med_id_val) if med_id_val.isdigit() and len(med_id_val) == 12 else med_id_val,
+            "mediclaimId": format_mediclaim_id(med_id_val) if (med_id_val and med_id_val.isdigit() and len(med_id_val) == 12) else med_id_val,
+            "doctorId": user.get("doctor_id"),
+            "hospitalId": user.get("hospital_id"),
             "isActive": bool(user["is_active"]),
             "adminVerified": bool(user["admin_verified"]),
             "isProfileComplete": bool(user["profile_complete"]),

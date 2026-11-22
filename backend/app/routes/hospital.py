@@ -7,11 +7,13 @@ from app.schemas.hospital import (
     OrganizationCreateInput, OrganizationsListResponse,
     PractitionerCreateInput, PractitionersListResponse,
     HospitalRegisterInput, HospitalLoginInput,
+    HospitalRequestOtpInput, HospitalVerifyOtpInput,
 )
 from app.services.hospital_service import (
     list_organizations, get_organization, create_organization,
     list_practitioners, get_practitioner, create_practitioner,
     register_hospital, login_hospital,
+    hospital_request_otp, hospital_verify_otp,
 )
 from app.services.doctor_service import list_doctor_patients
 from app.security import get_current_user, AuthenticatedUser
@@ -44,6 +46,28 @@ def register_hospital_route(payload: HospitalRegisterInput):
     return {
         "status": "success",
         "message": "Healthcare organization registration submitted. Awaiting administrator verification.",
+        "data": data,
+        "meta": _make_meta(),
+    }
+
+
+@router.post("/login/request-otp", status_code=status.HTTP_200_OK)
+def hospital_request_otp_route(payload: HospitalRequestOtpInput):
+    data = hospital_request_otp(payload)
+    return {
+        "status": "success",
+        "message": "Verification code sent to registered contact.",
+        "data": data,
+        "meta": _make_meta(),
+    }
+
+
+@router.post("/login/verify-otp", status_code=status.HTTP_200_OK)
+def hospital_verify_otp_route(payload: HospitalVerifyOtpInput):
+    data = hospital_verify_otp(payload)
+    return {
+        "status": "success",
+        "message": "Healthcare organization authenticated successfully.",
         "data": data,
         "meta": _make_meta(),
     }

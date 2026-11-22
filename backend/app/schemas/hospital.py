@@ -14,10 +14,25 @@ class HospitalRegisterInput(BaseModel):
 
 class HospitalLoginInput(BaseModel):
     model_config = ConfigDict(extra="ignore")
+    hospitalId: Optional[str] = None
     email: Optional[str] = None
     phone: Optional[str] = None
     username: Optional[str] = None
-    password: str = Field(min_length=1)
+    password: Optional[str] = None
+    otp: Optional[str] = None
+
+class HospitalRequestOtpInput(BaseModel):
+    model_config = ConfigDict(extra="ignore")
+    hospitalId: Optional[str] = None
+    email: Optional[str] = None
+    phone: Optional[str] = None
+
+class HospitalVerifyOtpInput(BaseModel):
+    model_config = ConfigDict(extra="ignore")
+    hospitalId: Optional[str] = None
+    email: Optional[str] = None
+    phone: Optional[str] = None
+    otp: str = Field(min_length=4, max_length=10)
 
 class OrganizationCreateInput(BaseModel):
     model_config = ConfigDict(extra="ignore")
@@ -31,6 +46,7 @@ class OrganizationCreateInput(BaseModel):
 class OrganizationSummary(BaseModel):
     id: str
     publicId: str
+    hospitalId: Optional[str] = None
     name: str
     organizationType: str
     registrationNumber: Optional[str] = None
@@ -60,6 +76,7 @@ class PractitionerCreateInput(BaseModel):
 class PractitionerSummary(BaseModel):
     id: str
     publicId: str
+    doctorId: Optional[str] = None
     fullName: str
     registrationNumber: str
     specialization: Optional[str] = None

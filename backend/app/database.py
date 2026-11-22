@@ -122,12 +122,18 @@ def init_db() -> None:
 
         # Add columns if migrating from an existing schema
         conn.execute("ALTER TABLE users ADD COLUMN IF NOT EXISTS mediclaim_id varchar(12) UNIQUE;")
+        conn.execute("ALTER TABLE users ADD COLUMN IF NOT EXISTS doctor_id varchar(30) UNIQUE;")
+        conn.execute("ALTER TABLE users ADD COLUMN IF NOT EXISTS hospital_id varchar(30) UNIQUE;")
         conn.execute("ALTER TABLE users ADD COLUMN IF NOT EXISTS aadhaar_number varchar(12) UNIQUE;")
         conn.execute("ALTER TABLE users ADD COLUMN IF NOT EXISTS admin_verified boolean NOT NULL DEFAULT false;")
         conn.execute("ALTER TABLE users ADD COLUMN IF NOT EXISTS profile_complete boolean NOT NULL DEFAULT false;")
         conn.execute("ALTER TABLE users ADD COLUMN IF NOT EXISTS otp_hash text;")
         conn.execute("ALTER TABLE users ADD COLUMN IF NOT EXISTS otp_expires_at bigint;")
         conn.execute("ALTER TABLE users ADD COLUMN IF NOT EXISTS otp_attempts integer NOT NULL DEFAULT 0;")
+
+        # Ensure practitioner_profiles and healthcare_organizations have doctor_id and hospital_id
+        conn.execute("ALTER TABLE practitioner_profiles ADD COLUMN IF NOT EXISTS doctor_id varchar(30) UNIQUE;")
+        conn.execute("ALTER TABLE healthcare_organizations ADD COLUMN IF NOT EXISTS hospital_id varchar(30) UNIQUE;")
 
         # Ensure user_roles table exists
         conn.execute("""

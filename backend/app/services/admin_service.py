@@ -46,6 +46,9 @@ def list_pending_verifications(
             FROM users u
             JOIN user_roles ur ON ur.user_id = u.id
             LEFT JOIN patient_profiles p ON p.user_id = u.id
+            LEFT JOIN practitioner_profiles pr ON pr.user_id = u.id
+            LEFT JOIN organization_memberships om ON om.user_id = u.id AND om.is_active = true
+            LEFT JOIN healthcare_organizations ho ON ho.id = om.organization_id
             WHERE u.is_active = true
         """
         params: List[Any] = []
@@ -59,16 +62,17 @@ def list_pending_verifications(
             base_sql += " AND u.admin_verified = false"
 
         if search_query:
-            base_sql += " AND (u.full_name ILIKE %s OR u.phone ILIKE %s OR u.aadhaar_number ILIKE %s OR u.mediclaim_id ILIKE %s)"
+            base_sql += " AND (u.full_name ILIKE %s OR u.phone ILIKE %s OR u.aadhaar_number ILIKE %s OR u.mediclaim_id ILIKE %s OR u.doctor_id ILIKE %s OR pr.doctor_id ILIKE %s OR u.hospital_id ILIKE %s OR ho.hospital_id ILIKE %s)"
             q = f"%{search_query.strip()}%"
-            params.extend([q, q, q, q])
+            params.extend([q, q, q, q, q, q, q, q])
 
         count_sql = f"SELECT COUNT(DISTINCT u.id) {base_sql}"
         total = conn.execute(count_sql, tuple(params)).fetchone()["count"]
 
         data_sql = f"""
             SELECT DISTINCT ON (u.created_at, u.id)
-                   u.id, u.full_name, u.phone, u.mediclaim_id, u.aadhaar_number, u.admin_verified, u.created_at,
+                   u.id, u.full_name, u.phone, u.mediclaim_id, u.doctor_id, u.hospital_id, u.aadhaar_number, u.admin_verified, u.created_at,
+                   pr.doctor_id AS doc_id, ho.hospital_id AS org_id,
                    ur.role,
                    p.date_of_birth, p.gender, p.blood_group, p.address
             {base_sql}
@@ -87,6 +91,8 @@ def list_pending_verifications(
             "dateOfBirth": dob_str,
             "phone": r["phone"],
             "mediclaimId": format_mediclaim_id(r["mediclaim_id"]) if r.get("mediclaim_id") else None,
+            "doctorId": r.get("doctor_id") or r.get("doc_id"),
+            "hospitalId": r.get("hospital_id") or r.get("org_id"),
             "aadhaarMasked": _mask_aadhaar(r["aadhaar_number"]),
             "accountStatus": "active" if r["admin_verified"] else "pending_admin_approval",
             "phoneVerified": True,
@@ -105,12 +111,12 @@ def get_verification_detail(user_id: str) -> Dict[str, Any]:
     raw_uuid = _clean_user_id(user_id)
     with get_db() as conn:
         row = conn.execute("""
-            SELECT u.id, u.full_name, u.phone, u.mediclaim_id, u.aadhaar_number, u.admin_verified, u.is_active, u.created_at,
+            SELECT u.id, u.full_name, u.phone, u.mediclaim_id, u.doctor_id, u.hospital_id, u.aadhaar_number, u.admin_verified, u.is_active, u.created_at,
                    ur.role,
                    p.id AS patient_id, p.date_of_birth, p.gender, p.blood_group, p.address,
                    p.emergency_contact_name, p.emergency_contact_phone, p.emergency_contact_relation,
-                   pr.id AS practitioner_id, pr.registration_number, pr.specialization, pr.qualification,
-                   ho.name AS organization_name
+                   pr.id AS practitioner_id, pr.doctor_id AS practitioner_doctor_id, pr.registration_number, pr.specialization, pr.qualification,
+                   ho.name AS organization_name, ho.hospital_id AS org_hospital_id
             FROM users u
             LEFT JOIN (
                 SELECT user_id, MIN(role) AS role
@@ -147,6 +153,8 @@ def get_verification_detail(user_id: str) -> Dict[str, Any]:
         "dateOfBirth": dob_str,
         "phone": row["phone"],
         "mediclaimId": format_mediclaim_id(row["mediclaim_id"]) if row.get("mediclaim_id") else None,
+        "doctorId": row.get("doctor_id") or row.get("practitioner_doctor_id"),
+        "hospitalId": row.get("hospital_id") or row.get("org_hospital_id"),
         "aadhaarMasked": _mask_aadhaar(row["aadhaar_number"]),
         "accountStatus": "active" if row["admin_verified"] else "pending_admin_approval",
         "phoneVerified": True,
@@ -168,10 +176,21 @@ def approve_patient(admin_user: AuthenticatedUser, user_id: str) -> Dict[str, An
     raw_uuid = _clean_user_id(user_id)
     with get_db() as conn:
         user = conn.execute("""
-            SELECT u.id, u.full_name, u.phone, u.mediclaim_id, u.admin_verified,
-                   p.id AS patient_profile_id
+            SELECT u.id, u.full_name, u.phone, u.mediclaim_id, u.doctor_id, u.hospital_id, u.admin_verified,
+                   p.id AS patient_profile_id,
+                   pr.doctor_id AS practitioner_doctor_id,
+                   ho.hospital_id AS org_hospital_id,
+                   ur.role
             FROM users u
+            LEFT JOIN (
+                SELECT user_id, MIN(role) AS role
+                FROM user_roles
+                GROUP BY user_id
+            ) ur ON ur.user_id = u.id
             LEFT JOIN patient_profiles p ON p.user_id = u.id
+            LEFT JOIN practitioner_profiles pr ON pr.user_id = u.id
+            LEFT JOIN organization_memberships om ON om.user_id = u.id AND om.is_active = true
+            LEFT JOIN healthcare_organizations ho ON ho.id = om.organization_id
             WHERE u.id = %s
         """, (raw_uuid,)).fetchone()
 
@@ -179,7 +198,7 @@ def approve_patient(admin_user: AuthenticatedUser, user_id: str) -> Dict[str, An
             raise APIProblemException(
                 status_code=status.HTTP_404_NOT_FOUND,
                 title="User Not Found",
-                detail=f"Patient user '{user_id}' was not found.",
+                detail=f"User '{user_id}' was not found.",
                 code="USER_NOT_FOUND"
             )
 
@@ -187,7 +206,7 @@ def approve_patient(admin_user: AuthenticatedUser, user_id: str) -> Dict[str, An
             raise APIProblemException(
                 status_code=status.HTTP_400_BAD_REQUEST,
                 title="Already Verified",
-                detail="This patient account is already verified and approved.",
+                detail="This account is already verified and approved.",
                 code="ALREADY_VERIFIED"
             )
 
@@ -199,26 +218,36 @@ def approve_patient(admin_user: AuthenticatedUser, user_id: str) -> Dict[str, An
 
         # Immutable audit trail
         pat_prof_id = str(user["patient_profile_id"]) if user.get("patient_profile_id") else None
-        formatted_med_id = format_mediclaim_id(user["mediclaim_id"])
+        role = user.get("role") or "patient"
+        doc_id = user.get("doctor_id") or user.get("practitioner_doctor_id")
+        hosp_id = user.get("hospital_id") or user.get("org_hospital_id")
+        formatted_med_id = format_mediclaim_id(user["mediclaim_id"]) if user.get("mediclaim_id") else None
+
+        if role in ("practitioner", "doctor"):
+            dispatched_msg = f"Approved practitioner registration for {user['full_name']} and dispatched Doctor ID {doc_id}"
+        elif role in ("hospital_admin", "organization"):
+            dispatched_msg = f"Approved hospital registration for {user['full_name']} and dispatched Hospital ID {hosp_id}"
+        else:
+            dispatched_msg = f"Approved patient registration for {user['full_name']} and dispatched Mediclaim ID {formatted_med_id}"
+
         record_audit(
             actor_user_id=admin_user.id,
             patient_id=pat_prof_id,
             action="approve",
-            what=f"Approved patient registration for {user['full_name']} and dispatched Mediclaim ID {formatted_med_id}",
+            what=dispatched_msg,
             actor_name=admin_user.full_name,
             actor_role="admin",
         )
 
-    logger.info(
-        "[NOTIFICATION SENT] Dispatched Mediclaim ID %s to %s (%s)",
-        formatted_med_id, user["full_name"], user["phone"]
-    )
+    logger.info("[NOTIFICATION SENT] %s", dispatched_msg)
 
     return {
         "userId": f"usr_{user['id']}",
         "fullName": user["full_name"],
         "phone": user["phone"],
         "mediclaimId": formatted_med_id,
+        "doctorId": doc_id,
+        "hospitalId": hosp_id,
         "adminVerified": True,
         "notificationSent": True,
     }

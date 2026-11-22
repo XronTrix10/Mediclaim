@@ -89,6 +89,41 @@ def normalize_mediclaim_id(value: Optional[str]) -> str:
     return "".join(ch for ch in str(value) if ch.isdigit())
 
 
+# --- Doctor ID & Hospital ID Generators ---
+def generate_doctor_id() -> str:
+    """Generates a unique Doctor ID in the format DR-XXXXX."""
+    num = secrets.randbelow(90000) + 10000
+    return f"DR-{num}"
+
+
+def normalize_doctor_id(val: Optional[str]) -> str:
+    if not val:
+        return ""
+    clean = str(val).strip().upper()
+    if clean.startswith("DR-"):
+        return clean
+    if clean.startswith("DR"):
+        return f"DR-{clean[2:].lstrip('-')}"
+    return f"DR-{clean}"
+
+
+def generate_hospital_id() -> str:
+    """Generates a unique Hospital ID in the format HS-XXXX or HS-XXXXX."""
+    num = secrets.randbelow(90000) + 10000
+    return f"HS-{num}"
+
+
+def normalize_hospital_id(val: Optional[str]) -> str:
+    if not val:
+        return ""
+    clean = str(val).strip().upper()
+    if clean.startswith("HS-"):
+        return clean
+    if clean.startswith("HS"):
+        return f"HS-{clean[2:].lstrip('-')}"
+    return f"HS-{clean}"
+
+
 # --- Password & OTP ---
 def hash_password(password: str) -> str:
     return _password_hash.hash(password)
@@ -159,6 +194,8 @@ class AuthenticatedUser:
         practitioner_profile_id: Optional[str] = None,
         active_grant_id: Optional[str] = None,
         token_role: Optional[str] = None,
+        doctor_id: Optional[str] = None,
+        hospital_id: Optional[str] = None,
     ):
         self.id = id
         self.raw_uuid = raw_uuid
@@ -175,6 +212,8 @@ class AuthenticatedUser:
         self.practitioner_profile_id = practitioner_profile_id
         self.active_grant_id = active_grant_id
         self.token_role = token_role
+        self.doctor_id = doctor_id
+        self.hospital_id = hospital_id
 
     def has_role(self, *target_roles: str) -> bool:
         return any(r in self.roles for r in target_roles) or (self.token_role in target_roles)
@@ -219,10 +258,14 @@ async def get_current_user(
             SELECT u.*,
                    p.id AS patient_profile_id,
                    p.public_id AS patient_public_id,
-                   doc.id AS practitioner_profile_id
+                   doc.id AS practitioner_profile_id,
+                   doc.doctor_id AS practitioner_doctor_id,
+                   ho.hospital_id AS org_hospital_id
             FROM users u
             LEFT JOIN patient_profiles p ON p.user_id = u.id
             LEFT JOIN practitioner_profiles doc ON doc.user_id = u.id
+            LEFT JOIN organization_memberships om ON om.user_id = u.id AND om.is_active = true
+            LEFT JOIN healthcare_organizations ho ON ho.id = om.organization_id
             WHERE u.id = %s
         """, (user_uuid,)).fetchone()
 
@@ -284,6 +327,8 @@ async def get_current_user(
                 )
 
     formatted_id = f"usr_{user_row['id']}"
+    doc_id = user_row.get("doctor_id") or user_row.get("practitioner_doctor_id")
+    hosp_id = user_row.get("hospital_id") or user_row.get("org_hospital_id")
     return AuthenticatedUser(
         id=formatted_id,
         raw_uuid=str(user_row["id"]),
@@ -300,6 +345,8 @@ async def get_current_user(
         practitioner_profile_id=str(user_row["practitioner_profile_id"]) if user_row.get("practitioner_profile_id") else None,
         active_grant_id=grant_id,
         token_role=payload.get("role"),
+        doctor_id=doc_id,
+        hospital_id=hosp_id,
     )
 
 

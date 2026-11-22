@@ -15,6 +15,8 @@ class PendingVerificationItem(BaseModel):
     adminVerified: bool = False
     registeredAt: str
     mediclaimId: Optional[str] = None
+    doctorId: Optional[str] = None
+    hospitalId: Optional[str] = None
     gender: Optional[str] = None
     bloodGroup: Optional[str] = None
     address: Optional[str] = None
@@ -36,6 +38,8 @@ class PendingVerificationDetail(BaseModel):
     emergencyContact: Optional[EmergencyContact] = None
     registeredAt: str
     mediclaimId: Optional[str] = None
+    doctorId: Optional[str] = None
+    hospitalId: Optional[str] = None
     role: Optional[str] = None
     specialization: Optional[str] = None
     registrationNumber: Optional[str] = None
@@ -56,7 +60,9 @@ class ApprovePatientData(BaseModel):
     userId: str
     fullName: str
     phone: str
-    mediclaimId: str
+    mediclaimId: Optional[str] = None
+    doctorId: Optional[str] = None
+    hospitalId: Optional[str] = None
     adminVerified: bool = True
     notificationSent: bool = True
 

@@ -18,15 +18,18 @@ class DoctorRegisterInput(BaseModel):
 
 class DoctorRequestOtpInput(BaseModel):
     model_config = ConfigDict(extra="ignore")
-    phone: str = Field(min_length=8, max_length=20)
+    doctorId: Optional[str] = None
+    phone: Optional[str] = None
 
 class DoctorVerifyOtpInput(BaseModel):
     model_config = ConfigDict(extra="ignore")
-    phone: str = Field(min_length=8, max_length=20)
+    doctorId: Optional[str] = None
+    phone: Optional[str] = None
     otp: str = Field(min_length=4, max_length=10)
 
 class DoctorLoginInput(BaseModel):
     model_config = ConfigDict(extra="ignore")
+    doctorId: Optional[str] = None
     phone: Optional[str] = None
     email: Optional[str] = None
     mediclaimId: Optional[str] = None

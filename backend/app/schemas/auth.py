@@ -56,6 +56,8 @@ class UserSummary(BaseModel):
     phone: str
     role: str = "patient"
     mediclaimId: Optional[str] = None
+    doctorId: Optional[str] = None
+    hospitalId: Optional[str] = None
     isActive: bool = True
     adminVerified: bool = False
     isProfileComplete: bool = False
@@ -72,8 +74,11 @@ class AuthResponse(BaseModel):
     meta: Optional[EnvelopeMeta] = None
 
 class LoginRequest(BaseModel):
-    model_config = ConfigDict(extra="forbid")
-    mediclaimId: str = Field(min_length=10, max_length=20)
+    model_config = ConfigDict(extra="ignore")
+    mediclaimId: Optional[str] = None
+    doctorId: Optional[str] = None
+    hospitalId: Optional[str] = None
+    identifier: Optional[str] = None
     password: Optional[str] = Field(default=None, max_length=128)
     otp: Optional[str] = Field(default=None, pattern=r"^\d{6}$")
 
@@ -84,8 +89,11 @@ class AdminLoginRequest(BaseModel):
     password: str = Field(min_length=4, max_length=128)
 
 class RequestOTPRequest(BaseModel):
-    model_config = ConfigDict(extra="forbid")
-    mediclaimId: str = Field(min_length=10, max_length=20)
+    model_config = ConfigDict(extra="ignore")
+    mediclaimId: Optional[str] = None
+    doctorId: Optional[str] = None
+    hospitalId: Optional[str] = None
+    identifier: Optional[str] = None
 
 class RequestOTPData(BaseModel):
     maskedPhone: str

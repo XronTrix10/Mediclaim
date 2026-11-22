@@ -6,6 +6,8 @@ CREATE TABLE users (
     id uuid PRIMARY KEY DEFAULT gen_random_uuid(),
     public_id varchar(12) NOT NULL UNIQUE CHECK (public_id ~ '^[A-Za-z0-9]{12}$'),
     mediclaim_id varchar(12) UNIQUE,
+    doctor_id varchar(30) UNIQUE,
+    hospital_id varchar(30) UNIQUE,
     full_name varchar(200) NOT NULL,
     email varchar(255) UNIQUE,
     phone varchar(20) NOT NULL UNIQUE,
@@ -45,6 +47,7 @@ CREATE TABLE patient_profiles (
 CREATE TABLE practitioner_profiles (
     id uuid PRIMARY KEY DEFAULT gen_random_uuid(),
     public_id varchar(12) NOT NULL UNIQUE CHECK (public_id ~ '^[A-Za-z0-9]{12}$'),
+    doctor_id varchar(30) UNIQUE,
     user_id uuid NOT NULL UNIQUE REFERENCES users(id) ON DELETE CASCADE,
     registration_number varchar(100) NOT NULL UNIQUE,
     specialization varchar(150),
@@ -55,6 +58,7 @@ CREATE TABLE practitioner_profiles (
 CREATE TABLE healthcare_organizations (
     id uuid PRIMARY KEY DEFAULT gen_random_uuid(),
     public_id varchar(12) NOT NULL UNIQUE CHECK (public_id ~ '^[A-Za-z0-9]{12}$'),
+    hospital_id varchar(30) UNIQUE,
     name varchar(255) NOT NULL,
     organization_type varchar(50) NOT NULL,
     registration_number varchar(100) UNIQUE,
