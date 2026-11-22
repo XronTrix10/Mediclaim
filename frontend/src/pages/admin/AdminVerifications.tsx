@@ -50,7 +50,11 @@ function DetailModal({ open, userId, onClose, onActionDone }: DetailModalProps) 
   const [rejecting, setRejecting] = useState(false)
   const [rejectReason, setRejectReason] = useState('')
   const [showRejectForm, setShowRejectForm] = useState(false)
-  const [approvedResult, setApprovedResult] = useState<{ mediclaimId: string } | null>(null)
+  const [approvedResult, setApprovedResult] = useState<{
+    mediclaimId?: string
+    doctorId?: string
+    hospitalId?: string
+  } | null>(null)
   const [err, setErr] = useState<string | null>(null)
 
   useEffect(() => {
@@ -73,7 +77,11 @@ function DetailModal({ open, userId, onClose, onActionDone }: DetailModalProps) 
     setErr(null)
     try {
       const res = await approvePatientVerification(userId)
-      setApprovedResult({ mediclaimId: res.mediclaimId })
+      setApprovedResult({
+        mediclaimId: res.mediclaimId,
+        doctorId: res.doctorId,
+        hospitalId: res.hospitalId,
+      })
       onActionDone()
     } catch {
       setErr('Failed to approve user')
@@ -118,10 +126,14 @@ function DetailModal({ open, userId, onClose, onActionDone }: DetailModalProps) 
           </div>
           <h3 className="text-[1.1rem] font-semibold text-ink">Account Approved!</h3>
           <p className="mt-1 text-[0.9rem] text-ink-soft">
-            Mediclaim ID issued and dispatched to user.
+            {approvedResult.doctorId
+              ? 'Doctor ID issued and dispatched to user.'
+              : approvedResult.hospitalId
+              ? 'Hospital ID issued and dispatched to user.'
+              : 'Mediclaim ID issued and dispatched to user.'}
           </p>
           <div className="mt-3 inline-block rounded-[12px] bg-white px-5 py-2.5 font-mono text-[1.1rem] font-bold tracking-wider text-brand shadow-soft">
-            {approvedResult.mediclaimId}
+            {approvedResult.doctorId || approvedResult.hospitalId || approvedResult.mediclaimId}
           </div>
           <div className="mt-4">
             <button type="button" onClick={onClose} className={button('soft', 'sm')}>
@@ -146,9 +158,9 @@ function DetailModal({ open, userId, onClose, onActionDone }: DetailModalProps) 
                     {d.role.replace('_', ' ')}
                   </span>
                 )}
-                {d.mediclaimId && (
+                {(d.doctorId || d.hospitalId || d.mediclaimId) && (
                   <span className="font-mono text-xs text-brand font-semibold bg-brand-tint/50 px-2 py-0.5 rounded-md">
-                    {d.mediclaimId}
+                    {d.doctorId || d.hospitalId || d.mediclaimId}
                   </span>
                 )}
               </div>
@@ -157,6 +169,18 @@ function DetailModal({ open, userId, onClose, onActionDone }: DetailModalProps) 
 
           {/* Details grid */}
           <div className="grid gap-3 sm:grid-cols-2 text-sm">
+            {d.doctorId && (
+              <div>
+                <span className={`${label} mb-1 block`}>Doctor ID</span>
+                <span className="font-mono font-medium text-ink">{d.doctorId}</span>
+              </div>
+            )}
+            {d.hospitalId && (
+              <div>
+                <span className={`${label} mb-1 block`}>Hospital ID</span>
+                <span className="font-mono font-medium text-ink">{d.hospitalId}</span>
+              </div>
+            )}
             {d.mediclaimId && (
               <div>
                 <span className={`${label} mb-1 block`}>Mediclaim ID</span>
@@ -250,7 +274,13 @@ function DetailModal({ open, userId, onClose, onActionDone }: DetailModalProps) 
                     disabled={approving}
                     className={`${button('primary')} flex-1`}
                   >
-                    {approving ? 'Approving…' : 'Approve & Issue Mediclaim ID'}
+                    {approving
+                      ? 'Approving…'
+                      : d.role === 'practitioner'
+                      ? 'Approve & Issue Doctor ID'
+                      : d.role === 'hospital_admin' || d.role === 'organization'
+                      ? 'Approve & Issue Hospital ID'
+                      : 'Approve & Issue Mediclaim ID'}
                   </button>
                   <button
                     type="button"
@@ -429,9 +459,9 @@ export default function AdminVerifications() {
                       {item.fullName}
                     </strong>
                     <StatusBadge approved={item.adminVerified} />
-                    {item.mediclaimId && (
+                    {(item.doctorId || item.hospitalId || item.mediclaimId) && (
                       <span className="hidden sm:inline-block font-mono text-xs text-ink-soft bg-surface px-2 py-0.5 rounded-md border border-line">
-                        {item.mediclaimId}
+                        {item.doctorId || item.hospitalId || item.mediclaimId}
                       </span>
                     )}
                   </div>

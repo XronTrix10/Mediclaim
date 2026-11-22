@@ -257,7 +257,11 @@ function PatientRegisterForm({ onSwitch }: FormProps) {
 
 // ─── DOCTOR LOGIN ──────────────────────────────────────────────
 function DoctorLoginForm({ onSwitch, onSuccess }: FormProps) {
+  const [doctorId, setDoctorId] = useState('')
   const [phone, setPhone] = useState('')
+  const [usePhone, setUsePhone] = useState(false)
+  const [usePassword, setUsePassword] = useState(false)
+  const [password, setPassword] = useState('')
   const [otp, setOtp] = useState('')
   const [otpSent, setOtpSent] = useState(false)
   const [maskedPhone, setMaskedPhone] = useState('')
@@ -266,56 +270,245 @@ function DoctorLoginForm({ onSwitch, onSuccess }: FormProps) {
   const [error, setError] = useState<string | null>(null)
 
   async function handleRequestOtp() {
-    if (!phone.trim()) { setError('Please enter your registered phone number.'); return }
-    setError(null); setLoading(true)
+    if (!usePhone && !doctorId.trim()) {
+      setError('Please enter your Doctor ID (e.g. DR-10294).')
+      return
+    }
+    if (usePhone && !phone.trim()) {
+      setError('Please enter your registered phone number.')
+      return
+    }
+    setError(null)
+    setLoading(true)
     let formattedPhone = phone.trim()
-    if (!formattedPhone.startsWith('+')) formattedPhone = `+91${formattedPhone.replace(/^0+/, '')}`
+    if (formattedPhone && !formattedPhone.startsWith('+')) {
+      formattedPhone = `+91${formattedPhone.replace(/^0+/, '')}`
+    }
     try {
-      const res = await authApi.doctorRequestOtp({ phone: formattedPhone })
-      setMaskedPhone(res.maskedPhone); setOtpSent(true)
+      const res = await authApi.doctorRequestOtp(
+        usePhone
+          ? { phone: formattedPhone }
+          : { doctorId: doctorId.trim() }
+      )
+      setMaskedPhone(res.maskedPhone)
+      setOtpSent(true)
       if (res.debugOtp) setDebugOtp(res.debugOtp)
     } catch (err: any) {
-      setError(err instanceof ApiError ? err.message : 'Could not send verification code.')
-    } finally { setLoading(false) }
+      if (err instanceof ApiError && err.code === 'ACCOUNT_PENDING_APPROVAL') {
+        setError('Your doctor account is awaiting administrator verification.')
+      } else {
+        setError(err instanceof ApiError ? err.message : 'Could not send verification code.')
+      }
+    } finally {
+      setLoading(false)
+    }
   }
 
   async function handleOtpSubmit(e: FormEvent) {
     e.preventDefault()
-    setError(null); setLoading(true)
+    setError(null)
+    setLoading(true)
     let formattedPhone = phone.trim()
-    if (!formattedPhone.startsWith('+')) formattedPhone = `+91${formattedPhone.replace(/^0+/, '')}`
+    if (formattedPhone && !formattedPhone.startsWith('+')) {
+      formattedPhone = `+91${formattedPhone.replace(/^0+/, '')}`
+    }
     try {
-      await authApi.doctorVerifyOtp({ phone: formattedPhone, otp: otp.trim() })
+      await authApi.doctorVerifyOtp(
+        usePhone
+          ? { phone: formattedPhone, otp: otp.trim() }
+          : { doctorId: doctorId.trim(), otp: otp.trim() }
+      )
       onSuccess()
     } catch (err: any) {
-      setError(err instanceof ApiError ? err.message : 'Invalid verification code.')
-    } finally { setLoading(false) }
+      if (err instanceof ApiError && err.code === 'ACCOUNT_PENDING_APPROVAL') {
+        setError('Your doctor account is awaiting administrator verification.')
+      } else {
+        setError(err instanceof ApiError ? err.message : 'Invalid verification code.')
+      }
+    } finally {
+      setLoading(false)
+    }
+  }
+
+  async function handlePasswordSubmit(e: FormEvent) {
+    e.preventDefault()
+    setError(null)
+    setLoading(true)
+    try {
+      await authApi.login({
+        mediclaimId: doctorId.trim(),
+        password: password,
+      })
+      onSuccess()
+    } catch (err: any) {
+      if (err instanceof ApiError && err.code === 'ACCOUNT_PENDING_APPROVAL') {
+        setError('Your doctor account is awaiting administrator verification.')
+      } else {
+        setError(err instanceof ApiError ? err.message : 'Sign in failed. Check your Doctor ID and password.')
+      }
+    } finally {
+      setLoading(false)
+    }
   }
 
   return (
     <AuthShell
       title="Doctor sign in"
-      subtitle="Sign in with your registered phone number."
+      subtitle={
+        usePassword
+          ? 'Sign in with your Doctor ID and password.'
+          : usePhone
+          ? 'Sign in with your registered phone number and OTP.'
+          : 'Sign in with your Doctor ID (DR-XXXXX) and OTP.'
+      }
       footer={<>New doctor?{' '}<button type="button" onClick={onSwitch} className="cursor-pointer font-semibold text-brand hover:underline hover:underline-offset-4">Register here</button></>}
     >
       <ErrorBanner msg={error} />
-      <div className="mt-7 grid gap-4.5">
-        <Field label="Registered mobile number" htmlFor="doc-phone">
-          <input id="doc-phone" type="tel" className={input} autoComplete="tel" placeholder="+91 98765 43210" value={phone} onChange={(e) => setPhone(e.target.value)} disabled={otpSent} required />
-        </Field>
-        {!otpSent ? (
-          <button className={`${button('primary', 'lg')} w-full`} type="button" onClick={handleRequestOtp} disabled={loading}>{loading ? 'Sending code...' : 'Send verification code'}</button>
-        ) : (
-          <form onSubmit={handleOtpSubmit} className="grid gap-4.5">
-            <p className="text-sm text-ink-soft">Code sent to <span className="font-semibold text-ink">{maskedPhone}</span>.{debugOtp && <span className="ml-2 font-mono text-xs text-brand font-bold">(OTP: {debugOtp})</span>}</p>
-            <Field label="6-digit verification code" htmlFor="doc-otp">
-              <input id="doc-otp" type="text" inputMode="numeric" maxLength={6} className={input} placeholder="000000" value={otp} onChange={(e) => setOtp(e.target.value)} autoFocus required />
+      {usePassword ? (
+        <form className="mt-7 grid gap-4.5" onSubmit={handlePasswordSubmit}>
+          <Field label="Doctor ID" htmlFor="doc-id">
+            <input
+              id="doc-id"
+              className={input}
+              placeholder="DR-10294"
+              value={doctorId}
+              onChange={(e) => setDoctorId(e.target.value.toUpperCase())}
+              required
+            />
+          </Field>
+          <Field
+            label="Password"
+            htmlFor="doc-pass"
+            aside={
+              <button
+                type="button"
+                onClick={() => { setUsePassword(false); setError(null) }}
+                className="text-sm font-semibold text-brand hover:underline hover:underline-offset-4"
+              >
+                Sign in with OTP
+              </button>
+            }
+          >
+            <input
+              id="doc-pass"
+              type="password"
+              className={input}
+              autoComplete="current-password"
+              value={password}
+              onChange={(e) => setPassword(e.target.value)}
+              required
+            />
+          </Field>
+          <button className={`${button('primary', 'lg')} w-full`} type="submit" disabled={loading}>
+            {loading ? 'Signing in...' : 'Sign in'}
+          </button>
+          <div className="flex items-center gap-3.5 text-sm text-ink-faint before:h-px before:flex-1 before:bg-line after:h-px after:flex-1 after:bg-line">or</div>
+          <button
+            className={`${button('ghost', 'lg')} w-full`}
+            type="button"
+            onClick={() => { setUsePassword(false); setOtpSent(false); setError(null) }}
+          >
+            Sign in with OTP instead
+          </button>
+        </form>
+      ) : (
+        <div className="mt-7 grid gap-4.5">
+          {!usePhone ? (
+            <Field
+              label="Doctor ID"
+              htmlFor="doc-id"
+              hint="Format: DR-XXXXX (e.g. DR-10294)"
+              aside={
+                <button
+                  type="button"
+                  onClick={() => { setUsePhone(true); setOtpSent(false); setError(null) }}
+                  className="text-xs font-semibold text-brand hover:underline"
+                >
+                  Use Mobile Number
+                </button>
+              }
+            >
+              <input
+                id="doc-id"
+                className={input}
+                placeholder="DR-10294"
+                value={doctorId}
+                onChange={(e) => setDoctorId(e.target.value.toUpperCase())}
+                disabled={otpSent}
+                required
+              />
             </Field>
-            <button className={`${button('primary', 'lg')} w-full`} type="submit" disabled={loading}>{loading ? 'Verifying...' : 'Verify and sign in'}</button>
-            <button type="button" onClick={handleRequestOtp} className="text-sm font-semibold text-brand hover:underline">Resend code</button>
-          </form>
-        )}
-      </div>
+          ) : (
+            <Field
+              label="Registered mobile number"
+              htmlFor="doc-phone"
+              aside={
+                <button
+                  type="button"
+                  onClick={() => { setUsePhone(false); setOtpSent(false); setError(null) }}
+                  className="text-xs font-semibold text-brand hover:underline"
+                >
+                  Use Doctor ID
+                </button>
+              }
+            >
+              <input
+                id="doc-phone"
+                type="tel"
+                className={input}
+                autoComplete="tel"
+                placeholder="+91 98765 43210"
+                value={phone}
+                onChange={(e) => setPhone(e.target.value)}
+                disabled={otpSent}
+                required
+              />
+            </Field>
+          )}
+
+          {!otpSent ? (
+            <button className={`${button('primary', 'lg')} w-full`} type="button" onClick={handleRequestOtp} disabled={loading}>
+              {loading ? 'Sending code...' : 'Send verification code'}
+            </button>
+          ) : (
+            <form onSubmit={handleOtpSubmit} className="grid gap-4.5">
+              <p className="text-sm text-ink-soft">
+                Code sent to <span className="font-semibold text-ink">{maskedPhone}</span>.
+                {debugOtp && <span className="ml-2 font-mono text-xs text-brand font-bold">(OTP: {debugOtp})</span>}
+              </p>
+              <Field label="6-digit verification code" htmlFor="doc-otp">
+                <input
+                  id="doc-otp"
+                  type="text"
+                  inputMode="numeric"
+                  maxLength={6}
+                  className={input}
+                  placeholder="000000"
+                  value={otp}
+                  onChange={(e) => setOtp(e.target.value)}
+                  autoFocus
+                  required
+                />
+              </Field>
+              <button className={`${button('primary', 'lg')} w-full`} type="submit" disabled={loading}>
+                {loading ? 'Verifying...' : 'Verify and sign in'}
+              </button>
+              <button type="button" onClick={handleRequestOtp} className="text-sm font-semibold text-brand hover:underline">
+                Resend code
+              </button>
+            </form>
+          )}
+
+          <div className="flex items-center gap-3.5 text-sm text-ink-faint before:h-px before:flex-1 before:bg-line after:h-px after:flex-1 after:bg-line">or</div>
+          <button
+            className={`${button('ghost', 'lg')} w-full`}
+            type="button"
+            onClick={() => { setUsePassword(true); setOtpSent(false); setError(null) }}
+          >
+            Sign in with password
+          </button>
+        </div>
+      )}
     </AuthShell>
   )
 }
@@ -339,6 +532,7 @@ function DoctorRegisterForm({ onSwitch }: FormProps) {
   const [hospitalName, setHospitalName] = useState('')
   const [agreed, setAgreed] = useState(false)
   const [registered, setRegistered] = useState(false)
+  const [assignedDoctorId, setAssignedDoctorId] = useState<string | null>(null)
   const [loading, setLoading] = useState(false)
   const [error, setError] = useState<string | null>(null)
 
@@ -347,13 +541,14 @@ function DoctorRegisterForm({ onSwitch }: FormProps) {
     let formattedPhone = phone.trim()
     if (!formattedPhone.startsWith('+')) formattedPhone = `+91${formattedPhone.replace(/^0+/, '')}`
     try {
-      await authApi.registerDoctor({
+      const res = await authApi.registerDoctor({
         fullName: fullName.trim(), dateOfBirth, phone: formattedPhone,
         aadhaarNumber: aadhaarNumber.replace(/\s+/g, ''), password,
         medicalLicenseNumber: licenseNumber.trim(), specialization,
         yearsOfExperience: yearsExp ? parseInt(yearsExp, 10) : undefined,
         hospitalName: hospitalName.trim() || undefined,
       })
+      setAssignedDoctorId(res.doctorId || null)
       setRegistered(true)
     } catch (err: any) {
       setError(err instanceof ApiError ? err.message : 'Registration failed. Please check your details.')
@@ -368,7 +563,17 @@ function DoctorRegisterForm({ onSwitch }: FormProps) {
             <svg className="size-6" fill="none" viewBox="0 0 24 24" strokeWidth="2" stroke="currentColor"><path strokeLinecap="round" strokeLinejoin="round" d="M9 12.75 11.25 15 15 9.75M21 12a9 9 0 1 1-18 0 9 9 0 0 1 18 0Z" /></svg>
           </div>
           <h3 className="mt-3 text-base font-semibold text-ink">Awaiting Verification</h3>
-          <p className="mt-2 text-sm leading-relaxed text-ink-soft">An administrator will verify your medical license and credentials. You'll receive an SMS once your account is approved.</p>
+          {assignedDoctorId && (
+            <div className="mt-3">
+              <span className="text-xs uppercase tracking-wider font-semibold text-ink-soft">Your Doctor ID</span>
+              <div className="mt-1 font-mono text-lg font-bold text-brand bg-brand-tint/50 py-1.5 px-3 rounded-lg inline-block">
+                {assignedDoctorId}
+              </div>
+            </div>
+          )}
+          <p className="mt-3 text-sm leading-relaxed text-ink-soft">
+            An administrator will verify your medical license and credentials. Once approved, use your <strong className="font-semibold text-ink">Doctor ID ({assignedDoctorId || 'DR-XXXXX'})</strong> to sign in with OTP.
+          </p>
         </div>
         <button type="button" onClick={onSwitch} className={`${button('primary', 'lg')} mt-5 w-full`}>Back to Sign in</button>
       </AuthShell>
@@ -409,29 +614,258 @@ function DoctorRegisterForm({ onSwitch }: FormProps) {
 
 // ─── HOSPITAL LOGIN ────────────────────────────────────────────
 function HospitalLoginForm({ onSwitch, onSuccess }: FormProps) {
+  const [hospitalId, setHospitalId] = useState('')
   const [email, setEmail] = useState('')
+  const [phone, setPhone] = useState('')
   const [password, setPassword] = useState('')
+  const [otp, setOtp] = useState('')
+  const [useOtp, setUseOtp] = useState(true)
+  const [useEmail, setUseEmail] = useState(false)
+  const [otpSent, setOtpSent] = useState(false)
+  const [maskedPhone, setMaskedPhone] = useState('')
+  const [debugOtp, setDebugOtp] = useState<string | null>(null)
   const [loading, setLoading] = useState(false)
   const [error, setError] = useState<string | null>(null)
 
-  async function handleSubmit(e: FormEvent) {
-    e.preventDefault(); setError(null); setLoading(true)
+  async function handleRequestOtp() {
+    if (!useEmail && !hospitalId.trim()) {
+      setError('Please enter your Hospital ID (e.g. HS-10294).')
+      return
+    }
+    if (useEmail && !email.trim() && !phone.trim()) {
+      setError('Please enter your registered email or phone.')
+      return
+    }
+    setError(null)
+    setLoading(true)
     try {
-      await authApi.hospitalLogin({ email: email.trim(), password })
+      const res = await authApi.hospitalRequestOtp(
+        !useEmail
+          ? { hospitalId: hospitalId.trim() }
+          : { email: email.trim() || undefined, phone: phone.trim() || undefined }
+      )
+      setMaskedPhone(res.maskedPhone)
+      setOtpSent(true)
+      if (res.debugOtp) setDebugOtp(res.debugOtp)
+    } catch (err: any) {
+      if (err instanceof ApiError && err.code === 'ACCOUNT_PENDING_APPROVAL') {
+        setError('Your organization account is awaiting administrator verification.')
+      } else {
+        setError(err instanceof ApiError ? err.message : 'Could not send verification code.')
+      }
+    } finally {
+      setLoading(false)
+    }
+  }
+
+  async function handleOtpSubmit(e: FormEvent) {
+    e.preventDefault()
+    setError(null)
+    setLoading(true)
+    try {
+      await authApi.hospitalVerifyOtp(
+        !useEmail
+          ? { hospitalId: hospitalId.trim(), otp: otp.trim() }
+          : { email: email.trim() || undefined, phone: phone.trim() || undefined, otp: otp.trim() }
+      )
       onSuccess()
     } catch (err: any) {
-      setError(err instanceof ApiError ? err.message : 'Sign in failed. Check your credentials.')
-    } finally { setLoading(false) }
+      if (err instanceof ApiError && err.code === 'ACCOUNT_PENDING_APPROVAL') {
+        setError('Your organization account is awaiting administrator verification.')
+      } else {
+        setError(err instanceof ApiError ? err.message : 'Invalid verification code.')
+      }
+    } finally {
+      setLoading(false)
+    }
+  }
+
+  async function handlePasswordSubmit(e: FormEvent) {
+    e.preventDefault()
+    setError(null)
+    setLoading(true)
+    try {
+      await authApi.hospitalLogin({
+        hospitalId: hospitalId.trim() || undefined,
+        email: email.trim() || undefined,
+        password: password,
+      })
+      onSuccess()
+    } catch (err: any) {
+      if (err instanceof ApiError && err.code === 'ACCOUNT_PENDING_APPROVAL') {
+        setError('Your organization account is awaiting administrator verification.')
+      } else {
+        setError(err instanceof ApiError ? err.message : 'Sign in failed. Check your credentials.')
+      }
+    } finally {
+      setLoading(false)
+    }
   }
 
   return (
-    <AuthShell title="Hospital / Org sign in" subtitle="Sign in to manage patients and practitioners." footer={<>New organization?{' '}<button type="button" onClick={onSwitch} className="cursor-pointer font-semibold text-brand hover:underline">Register here</button></>}>
+    <AuthShell
+      title="Hospital / Org sign in"
+      subtitle={
+        useOtp
+          ? 'Sign in with your Hospital ID (HS-XXXX) and OTP.'
+          : 'Sign in to manage patients and practitioners.'
+      }
+      footer={<>New organization?{' '}<button type="button" onClick={onSwitch} className="cursor-pointer font-semibold text-brand hover:underline">Register here</button></>}
+    >
       <ErrorBanner msg={error} />
-      <form className="mt-7 grid gap-4.5" onSubmit={handleSubmit}>
-        <Field label="Email address" htmlFor="h-email"><input id="h-email" type="email" className={input} autoComplete="username email" placeholder="admin@hospital.org" value={email} onChange={(e) => setEmail(e.target.value)} required /></Field>
-        <Field label="Password" htmlFor="h-pass"><input id="h-pass" type="password" className={input} autoComplete="current-password" value={password} onChange={(e) => setPassword(e.target.value)} required /></Field>
-        <button className={`${button('primary', 'lg')} w-full`} type="submit" disabled={loading}>{loading ? 'Signing in...' : 'Sign in'}</button>
-      </form>
+      {useOtp ? (
+        <div className="mt-7 grid gap-4.5">
+          {!useEmail ? (
+            <Field
+              label="Hospital ID"
+              htmlFor="h-id"
+              hint="Format: HS-XXXX (e.g. HS-10294)"
+              aside={
+                <button
+                  type="button"
+                  onClick={() => { setUseEmail(true); setOtpSent(false); setError(null) }}
+                  className="text-xs font-semibold text-brand hover:underline"
+                >
+                  Use Email
+                </button>
+              }
+            >
+              <input
+                id="h-id"
+                className={input}
+                placeholder="HS-10294"
+                value={hospitalId}
+                onChange={(e) => setHospitalId(e.target.value.toUpperCase())}
+                disabled={otpSent}
+                required
+              />
+            </Field>
+          ) : (
+            <Field
+              label="Email address"
+              htmlFor="h-email-otp"
+              aside={
+                <button
+                  type="button"
+                  onClick={() => { setUseEmail(false); setOtpSent(false); setError(null) }}
+                  className="text-xs font-semibold text-brand hover:underline"
+                >
+                  Use Hospital ID
+                </button>
+              }
+            >
+              <input
+                id="h-email-otp"
+                type="email"
+                className={input}
+                placeholder="admin@hospital.org"
+                value={email}
+                onChange={(e) => setEmail(e.target.value)}
+                disabled={otpSent}
+                required
+              />
+            </Field>
+          )}
+
+          {!otpSent ? (
+            <button className={`${button('primary', 'lg')} w-full`} type="button" onClick={handleRequestOtp} disabled={loading}>
+              {loading ? 'Sending code...' : 'Send verification code'}
+            </button>
+          ) : (
+            <form onSubmit={handleOtpSubmit} className="grid gap-4.5">
+              <p className="text-sm text-ink-soft">
+                Code sent to <span className="font-semibold text-ink">{maskedPhone}</span>.
+                {debugOtp && <span className="ml-2 font-mono text-xs text-brand font-bold">(OTP: {debugOtp})</span>}
+              </p>
+              <Field label="6-digit verification code" htmlFor="h-otp">
+                <input
+                  id="h-otp"
+                  type="text"
+                  inputMode="numeric"
+                  maxLength={6}
+                  className={input}
+                  placeholder="000000"
+                  value={otp}
+                  onChange={(e) => setOtp(e.target.value)}
+                  autoFocus
+                  required
+                />
+              </Field>
+              <button className={`${button('primary', 'lg')} w-full`} type="submit" disabled={loading}>
+                {loading ? 'Verifying...' : 'Verify and sign in'}
+              </button>
+              <button type="button" onClick={handleRequestOtp} className="text-sm font-semibold text-brand hover:underline">
+                Resend code
+              </button>
+            </form>
+          )}
+
+          <div className="flex items-center gap-3.5 text-sm text-ink-faint before:h-px before:flex-1 before:bg-line after:h-px after:flex-1 after:bg-line">or</div>
+          <button
+            className={`${button('ghost', 'lg')} w-full`}
+            type="button"
+            onClick={() => { setUseOtp(false); setOtpSent(false); setError(null) }}
+          >
+            Sign in with password instead
+          </button>
+        </div>
+      ) : (
+        <form className="mt-7 grid gap-4.5" onSubmit={handlePasswordSubmit}>
+          <Field
+            label="Hospital ID or Email"
+            htmlFor="h-cred"
+            aside={
+              <button
+                type="button"
+                onClick={() => { setUseOtp(true); setError(null) }}
+                className="text-sm font-semibold text-brand hover:underline hover:underline-offset-4"
+              >
+                Sign in with OTP
+              </button>
+            }
+          >
+            <input
+              id="h-cred"
+              className={input}
+              placeholder="HS-10294 or admin@hospital.org"
+              value={hospitalId || email}
+              onChange={(e) => {
+                const val = e.target.value
+                if (val.includes('@')) {
+                  setEmail(val)
+                  setHospitalId('')
+                } else {
+                  setHospitalId(val.toUpperCase())
+                  setEmail('')
+                }
+              }}
+              required
+            />
+          </Field>
+          <Field label="Password" htmlFor="h-pass">
+            <input
+              id="h-pass"
+              type="password"
+              className={input}
+              autoComplete="current-password"
+              value={password}
+              onChange={(e) => setPassword(e.target.value)}
+              required
+            />
+          </Field>
+          <button className={`${button('primary', 'lg')} w-full`} type="submit" disabled={loading}>
+            {loading ? 'Signing in...' : 'Sign in'}
+          </button>
+          <div className="flex items-center gap-3.5 text-sm text-ink-faint before:h-px before:flex-1 before:bg-line after:h-px after:flex-1 after:bg-line">or</div>
+          <button
+            className={`${button('ghost', 'lg')} w-full`}
+            type="button"
+            onClick={() => { setUseOtp(true); setOtpSent(false); setError(null) }}
+          >
+            Sign in with OTP instead
+          </button>
+        </form>
+      )}
     </AuthShell>
   )
 }
@@ -449,6 +883,7 @@ function HospitalRegisterForm({ onSwitch }: FormProps) {
   const [password, setPassword] = useState('')
   const [agreed, setAgreed] = useState(false)
   const [registered, setRegistered] = useState(false)
+  const [assignedHospitalId, setAssignedHospitalId] = useState<string | null>(null)
   const [loading, setLoading] = useState(false)
   const [error, setError] = useState<string | null>(null)
 
@@ -457,7 +892,11 @@ function HospitalRegisterForm({ onSwitch }: FormProps) {
     let formattedPhone = phone.trim()
     if (!formattedPhone.startsWith('+')) formattedPhone = `+91${formattedPhone.replace(/^0+/, '')}`
     try {
-      await authApi.registerHospital({ name: name.trim(), registrationNumber: regNumber.trim(), type, address: address.trim(), phone: formattedPhone, email: email.trim(), password })
+      const res = await authApi.registerHospital({
+        name: name.trim(), registrationNumber: regNumber.trim(), type, address: address.trim(),
+        phone: formattedPhone, email: email.trim(), password
+      })
+      setAssignedHospitalId(res.hospitalId || null)
       setRegistered(true)
     } catch (err: any) {
       setError(err instanceof ApiError ? err.message : 'Registration failed.')
@@ -472,7 +911,17 @@ function HospitalRegisterForm({ onSwitch }: FormProps) {
             <svg className="size-6" fill="none" viewBox="0 0 24 24" strokeWidth="2" stroke="currentColor"><path strokeLinecap="round" strokeLinejoin="round" d="M9 12.75 11.25 15 15 9.75M21 12a9 9 0 1 1-18 0 9 9 0 0 1 18 0Z" /></svg>
           </div>
           <h3 className="mt-3 text-base font-semibold text-ink">Awaiting Admin Approval</h3>
-          <p className="mt-2 text-sm leading-relaxed text-ink-soft">An administrator will verify your registration documents and approve your account. You'll receive an email once approved.</p>
+          {assignedHospitalId && (
+            <div className="mt-3">
+              <span className="text-xs uppercase tracking-wider font-semibold text-ink-soft">Your Hospital ID</span>
+              <div className="mt-1 font-mono text-lg font-bold text-brand bg-brand-tint/50 py-1.5 px-3 rounded-lg inline-block">
+                {assignedHospitalId}
+              </div>
+            </div>
+          )}
+          <p className="mt-3 text-sm leading-relaxed text-ink-soft">
+            An administrator will verify your registration documents and approve your account. Once approved, use your <strong className="font-semibold text-ink">Hospital ID ({assignedHospitalId || 'HS-XXXX'})</strong> to sign in with OTP.
+          </p>
         </div>
         <button type="button" onClick={onSwitch} className={`${button('primary', 'lg')} mt-5 w-full`}>Back to Sign in</button>
       </AuthShell>

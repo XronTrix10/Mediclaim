@@ -26,7 +26,8 @@ export default function HospitalPractitioners() {
     (p) =>
       p.fullName.toLowerCase().includes(search.toLowerCase()) ||
       (p.specialization ?? '').toLowerCase().includes(search.toLowerCase()) ||
-      p.registrationNumber.includes(search)
+      p.registrationNumber.includes(search) ||
+      (p.doctorId ?? '').toLowerCase().includes(search.toLowerCase())
   )
 
   return (
@@ -73,7 +74,14 @@ export default function HospitalPractitioners() {
                   {pr.fullName.split(' ').slice(0, 2).map((w) => w[0]).join('').toUpperCase()}
                 </span>
                 <div className="min-w-0 flex-1">
-                  <p className="truncate font-semibold text-ink">{pr.fullName}</p>
+                  <div className="flex items-center gap-2">
+                    <p className="truncate font-semibold text-ink">{pr.fullName}</p>
+                    {pr.doctorId && (
+                      <span className="font-mono text-xs font-semibold text-brand bg-brand-tint px-2 py-0.5 rounded-md">
+                        {pr.doctorId}
+                      </span>
+                    )}
+                  </div>
                   <p className="text-xs text-ink-faint">{pr.specialization ?? 'General Physician'}</p>
                 </div>
               </div>

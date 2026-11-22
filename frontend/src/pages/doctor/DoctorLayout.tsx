@@ -61,7 +61,9 @@ function DoctorSidebar() {
         <span className={avatar}>{initials(user?.fullName ?? 'Dr')}</span>
         <div className="min-w-0">
           <strong className="block truncate text-[0.92rem] font-semibold leading-tight">{user?.fullName ?? 'Doctor'}</strong>
-          <small className="block truncate text-[0.78rem] text-ink-faint">Practitioner</small>
+          <small className="block truncate text-[0.78rem] text-ink-faint">
+            {user?.doctorId ? `ID: ${user.doctorId}` : 'Practitioner'}
+          </small>
         </div>
       </div>
       <button

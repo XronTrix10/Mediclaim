@@ -13,7 +13,11 @@ export default function UserMenu() {
   const ref = useRef<HTMLDivElement>(null)
 
   const fullName = healthCtx?.profile?.fullName || currentUser?.fullName || 'User'
-  const mediclaimId = healthCtx?.profile?.mediclaimId || currentUser?.mediclaimId
+  const displayId =
+    currentUser?.doctorId ||
+    currentUser?.hospitalId ||
+    healthCtx?.profile?.mediclaimId ||
+    currentUser?.mediclaimId
   const role = currentUser?.role ? currentUser.role.replace('_', ' ') : ''
 
   useEffect(() => {
@@ -48,8 +52,11 @@ export default function UserMenu() {
         <div className="absolute right-0 top-full z-30 mt-2 w-64 rounded-[20px] border border-line bg-white p-2 shadow-soft">
           <div className="px-3 py-2">
             <strong className="block truncate text-[0.95rem] font-semibold">{fullName}</strong>
-            {mediclaimId ? (
-              <small className="block text-[0.8rem] text-ink-faint">ID {mediclaimId}</small>
+            {displayId ? (
+              <small className="block text-[0.8rem] text-ink-faint">
+                {currentUser?.doctorId ? 'Dr ID ' : currentUser?.hospitalId ? 'Hospital ID ' : 'ID '}
+                {displayId}
+              </small>
             ) : role ? (
               <small className="block text-[0.8rem] text-ink-faint capitalize">{role}</small>
             ) : null}

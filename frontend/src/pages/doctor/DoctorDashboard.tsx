@@ -82,10 +82,17 @@ export default function DoctorDashboard() {
     <div className="grid gap-7">
       {/* Header */}
       <div>
-        <h1 className="text-[1.9rem] font-semibold leading-tight text-ink">
-          Good {new Date().getHours() < 12 ? 'morning' : new Date().getHours() < 17 ? 'afternoon' : 'evening'},{' '}
-          Dr. {user?.fullName?.split(' ')[0] ?? 'Doctor'} 👋
-        </h1>
+        <div className="flex flex-wrap items-center justify-between gap-2">
+          <h1 className="text-[1.9rem] font-semibold leading-tight text-ink">
+            Good {new Date().getHours() < 12 ? 'morning' : new Date().getHours() < 17 ? 'afternoon' : 'evening'},{' '}
+            Dr. {user?.fullName?.split(' ')[0] ?? 'Doctor'} 👋
+          </h1>
+          {user?.doctorId && (
+            <span className="font-mono text-sm font-semibold text-brand bg-brand-tint px-3 py-1 rounded-xl">
+              Dr ID: {user.doctorId}
+            </span>
+          )}
+        </div>
         <p className="mt-1 text-[0.95rem] text-ink-soft">Here's an overview of your practitioner dashboard.</p>
       </div>
 

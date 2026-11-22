@@ -62,7 +62,9 @@ function HospitalSidebar() {
         <span className={avatar}>{initials}</span>
         <div className="min-w-0">
           <strong className="block truncate text-[0.92rem] font-semibold leading-tight">{displayName}</strong>
-          <small className="block truncate text-[0.78rem] text-ink-faint">Organization</small>
+          <small className="block truncate text-[0.78rem] text-ink-faint">
+            {user?.hospitalId ? `ID: ${user.hospitalId}` : 'Organization'}
+          </small>
         </div>
       </div>
       <button

@@ -61,9 +61,16 @@ export default function HospitalDashboard() {
     <div className="grid gap-7">
       {/* Header */}
       <div>
-        <h1 className="text-[1.9rem] font-semibold leading-tight text-ink">
-          {user?.fullName ?? 'Organization'} Dashboard
-        </h1>
+        <div className="flex flex-wrap items-center justify-between gap-2">
+          <h1 className="text-[1.9rem] font-semibold leading-tight text-ink">
+            {user?.fullName ?? 'Organization'} Dashboard
+          </h1>
+          {user?.hospitalId && (
+            <span className="font-mono text-sm font-semibold text-brand bg-brand-tint px-3 py-1 rounded-xl">
+              Hospital ID: {user.hospitalId}
+            </span>
+          )}
+        </div>
         <p className="mt-1 text-[0.95rem] text-ink-soft">Manage your patients and practitioner network.</p>
       </div>
 

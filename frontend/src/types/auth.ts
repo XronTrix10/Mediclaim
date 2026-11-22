@@ -6,7 +6,9 @@ export interface User {
   email: string
   phone: string
   role: UserRole
-  mediclaimId: string
+  mediclaimId?: string | null
+  doctorId?: string | null
+  hospitalId?: string | null
   isActive: boolean
   createdAt: string
   updatedAt: string

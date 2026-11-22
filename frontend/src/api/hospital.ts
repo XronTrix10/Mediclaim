@@ -3,6 +3,7 @@ import { request } from './client'
 export interface OrganizationSummary {
   id: string
   publicId: string
+  hospitalId?: string
   name: string
   organizationType: 'hospital' | 'clinic' | 'pharmacy' | 'diagnostic_lab'
   registrationNumber?: string
@@ -26,6 +27,7 @@ export interface OrganizationCreateInput {
 export interface PractitionerSummary {
   id: string
   publicId: string
+  doctorId?: string
   fullName: string
   registrationNumber: string
   specialization?: string
@@ -35,6 +37,7 @@ export interface PractitionerSummary {
   organization?: {
     id: string
     publicId: string
+    hospitalId?: string
     name: string
   }
   createdAt: string

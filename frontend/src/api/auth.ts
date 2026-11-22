@@ -8,6 +8,8 @@ export interface UserSummary {
   phone: string
   role: UserRole
   mediclaimId?: string | null
+  doctorId?: string | null
+  hospitalId?: string | null
   isActive: boolean
   adminVerified: boolean
   isProfileComplete: boolean
@@ -20,6 +22,9 @@ export interface RegisterResult {
   otpSent: boolean
   otpExpiresInSeconds: number
   debugOtp?: string | null
+  mediclaimId?: string | null
+  doctorId?: string | null
+  hospitalId?: string | null
 }
 
 export interface VerifyOtpResult {
@@ -122,12 +127,12 @@ export const authApi = {
     return res.data
   },
 
-  async doctorRequestOtp(payload: { phone: string }): Promise<RequestOtpResult> {
+  async doctorRequestOtp(payload: { phone?: string; doctorId?: string }): Promise<RequestOtpResult> {
     const res = await api.post<{ status: string; data: RequestOtpResult }>('/doctor/login/request-otp', payload)
     return res.data
   },
 
-  async doctorVerifyOtp(payload: { phone: string; otp: string }): Promise<AuthSession> {
+  async doctorVerifyOtp(payload: { phone?: string; doctorId?: string; otp: string }): Promise<AuthSession> {
     const res = await api.post<{ status: string; data: AuthSession }>('/doctor/login/verify-otp', payload)
     setStoredToken(res.data.accessToken)
     setStoredUser(res.data.user)
@@ -143,12 +148,30 @@ export const authApi = {
     phone: string
     email: string
     password: string
-  }): Promise<{ orgId: string; message: string }> {
-    const res = await api.post<{ status: string; data: { orgId: string; message: string } }>('/hospital/register', payload)
+  }): Promise<{ orgId: string; hospitalId?: string; message: string }> {
+    const res = await api.post<{ status: string; data: { orgId: string; hospitalId?: string; message: string } }>('/hospital/register', payload)
     return res.data
   },
 
-  async hospitalLogin(payload: { email: string; password: string }): Promise<AuthSession> {
+  async hospitalRequestOtp(payload: { hospitalId?: string; email?: string; phone?: string }): Promise<RequestOtpResult> {
+    const res = await api.post<{ status: string; data: RequestOtpResult }>('/hospital/login/request-otp', payload)
+    return res.data
+  },
+
+  async hospitalVerifyOtp(payload: { hospitalId?: string; email?: string; phone?: string; otp: string }): Promise<AuthSession> {
+    const res = await api.post<{ status: string; data: AuthSession }>('/hospital/login/verify-otp', payload)
+    setStoredToken(res.data.accessToken)
+    setStoredUser(res.data.user)
+    return res.data
+  },
+
+  async hospitalLogin(payload: {
+    hospitalId?: string
+    email?: string
+    phone?: string
+    password?: string
+    otp?: string
+  }): Promise<AuthSession> {
     const res = await api.post<{ status: string; data: AuthSession }>('/hospital/login', payload)
     setStoredToken(res.data.accessToken)
     setStoredUser(res.data.user)

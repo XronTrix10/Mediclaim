@@ -12,11 +12,15 @@ export interface PendingVerification {
   adminVerified: boolean
   registeredAt: string
   mediclaimId?: string
+  doctorId?: string
+  hospitalId?: string
   role?: string
 }
 
 export interface VerificationDetail extends PendingVerification {
   mediclaimIdAllocated?: string
+  doctorId?: string
+  hospitalId?: string
   accountStatus?: string
   emergencyContact?: {
     name: string
@@ -80,10 +84,12 @@ export async function getPatientVerificationDetail(userId: string): Promise<Veri
 
 export async function approvePatientVerification(userId: string): Promise<{
   userId: string
-  mediclaimId: string
+  mediclaimId?: string
+  doctorId?: string
+  hospitalId?: string
   approvedAt: string
 }> {
-  const res = await request<{ status: string; data: { userId: string; mediclaimId: string; approvedAt: string } }>(
+  const res = await request<{ status: string; data: { userId: string; mediclaimId?: string; doctorId?: string; hospitalId?: string; approvedAt: string } }>(
     `/admin/verifications/${userId}/approve`,
     { method: 'POST' }
   )
