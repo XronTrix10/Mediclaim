@@ -83,36 +83,47 @@ function serialize(state: HealthState): HealthState {
 function loadInitial(): HealthState {
   const now = Date.now()
   const curUser = getStoredUser()
+  const isAuth = authApi.isAuthenticated()
+
+  if (isAuth && curUser) {
+    const saved = readJSON<HealthState>(STORAGE_KEY)
+    const isSameUser =
+      saved?.profile &&
+      (saved.profile.userId === curUser.id ||
+        saved.profile.mediclaimId?.replace(/\s/g, '') === curUser.mediclaimId?.replace(/\s/g, ''))
+
+    return {
+      profile: {
+        ...initialPatientProfile,
+        userId: curUser.id,
+        fullName: curUser.fullName,
+        firstName: curUser.fullName.split(' ')[0],
+        phone: curUser.phone,
+        mediclaimId: curUser.mediclaimId || (isSameUser ? saved?.profile.mediclaimId : '') || '',
+        isProfileComplete: Boolean(curUser.isProfileComplete),
+      },
+      ownEvents: isSameUser ? saved?.ownEvents || [] : [],
+      prescriptions: isSameUser ? saved?.prescriptions || [] : [],
+      sampleLoaded: false,
+      grants: isSameUser
+        ? (saved?.grants || []).filter(
+            (g) => (g.grantStatus === 'active' || !g.grantStatus) && Date.parse(g.expiresAt) > now
+          )
+        : [],
+      requests: isSameUser ? saved?.requests || [] : [],
+      caregivers: isSameUser ? saved?.caregivers || [] : [],
+      audit: isSameUser ? saved?.audit || [] : [],
+      corrections: isSameUser ? saved?.corrections || [] : [],
+    }
+  }
+
+  // Unauthenticated fallback / landing demo
   const saved = readJSON<HealthState>(STORAGE_KEY)
-
-  // If saved state matches the authenticated user, restore it
   if (saved?.profile) {
-    const isSameUser = !curUser ||
-      saved.profile.userId === curUser.id ||
-      saved.profile.mediclaimId?.replace(/\s/g, '') === curUser.mediclaimId?.replace(/\s/g, '')
-
-    if (isSameUser) {
-      if (curUser?.isProfileComplete) {
-        saved.profile.isProfileComplete = true
-      }
-      return { ...seedState(now), ...saved }
-    }
+    return { ...seedState(now), ...saved }
   }
 
-  // Fresh state for the current authenticated user
   const state = seedState(now)
-  if (curUser) {
-    state.profile = {
-      ...state.profile,
-      userId: curUser.id,
-      fullName: curUser.fullName,
-      firstName: curUser.fullName.split(' ')[0],
-      phone: curUser.phone,
-      mediclaimId: curUser.mediclaimId || state.profile.mediclaimId,
-      isProfileComplete: Boolean(curUser.isProfileComplete),
-    }
-    return state
-  }
   const legacyProfile = readJSON<HealthState['profile']>(LEGACY.patient)
   const legacyRx = readJSON<PrescriptionRecord[]>(LEGACY.prescriptions)
   const legacyAllergies = readJSON<
@@ -477,8 +488,8 @@ export default function HealthDataProvider({ children }: { children: ReactNode }
           )
         }
 
-        if (requestsRes.status === 'fulfilled' && requestsRes.value) {
-          patch.requests = requestsRes.value
+        if (requestsRes.status === 'fulfilled') {
+          patch.requests = requestsRes.value || []
         }
 
         if (caregiversRes.status === 'fulfilled' && caregiversRes.value) {
@@ -511,7 +522,7 @@ export default function HealthDataProvider({ children }: { children: ReactNode }
   // Periodic background check to keep grants and requests in real-time sync with backend
   useEffect(() => {
     if (!authApi.isAuthenticated()) return
-    const interval = setInterval(() => {
+    const syncConsent = () => {
       Promise.allSettled([consentApi.getGrants('active'), consentApi.getRequests()])
         .then(([gRes, rRes]) => {
           const patch: Partial<HealthState> = {}
@@ -522,16 +533,17 @@ export default function HealthDataProvider({ children }: { children: ReactNode }
                 Date.parse(g.expiresAt) > Date.now()
             )
           }
-          if (rRes.status === 'fulfilled' && rRes.value) {
-            patch.requests = rRes.value
+          if (rRes.status === 'fulfilled') {
+            patch.requests = rRes.value || []
           }
           if (Object.keys(patch).length > 0) {
             dispatch({ type: 'state/hydrated', payload: patch })
           }
         })
         .catch(() => {})
-    }, 10000)
+    }
 
+    const interval = setInterval(syncConsent, 4000)
     return () => clearInterval(interval)
   }, [])
 

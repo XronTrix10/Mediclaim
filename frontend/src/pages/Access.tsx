@@ -96,26 +96,36 @@ export default function Access() {
               </div>
             ) : (
               <ul>
-                {requests.map((r) => (
-                  <li key={r.id} className="grid grid-cols-[auto_minmax(0,1fr)] gap-x-3.5 gap-y-3 border-t border-line py-4 first:border-t-0 first:pt-0 last:pb-0">
-                    <span className={avatar}>{initials(r.name)}</span>
-                    <div className="min-w-0">
-                      <strong className="block leading-[1.35] font-semibold [overflow-wrap:anywhere]">{r.name}</strong>
-                      <small className="block text-[0.86rem] leading-[1.45] text-ink-faint">
-                        {r.role}. Asking for {r.scope.map((k) => kinds[k].plural.toLowerCase()).join(' and ')} for {r.durationHours}{' '}
-                        {r.durationHours === 1 ? 'hour' : 'hours'}.
-                      </small>
-                    </div>
-                    <div className="col-span-full grid grid-cols-2 gap-2 sm:col-span-1 sm:col-start-2 sm:flex">
-                      <button className={button('ghost', 'sm')} type="button" onClick={() => actions.declineRequest(r.id)}>
-                        Decline
-                      </button>
-                      <button className={button('primary', 'sm')} type="button" onClick={() => actions.approveRequest(r.id)}>
-                        Approve
-                      </button>
-                    </div>
-                  </li>
-                ))}
+                {requests.map((r) => {
+                  const scopeNames = (r.scope || [])
+                    .map((k) => (kinds[k as Kind]?.plural || k).toLowerCase())
+                    .join(' and ')
+                  return (
+                    <li key={r.id} className="grid grid-cols-[auto_minmax(0,1fr)] gap-x-3.5 gap-y-3 border-t border-line py-4 first:border-t-0 first:pt-0 last:pb-0">
+                      <span className={avatar}>{initials(r.name)}</span>
+                      <div className="min-w-0">
+                        <strong className="block leading-[1.35] font-semibold [overflow-wrap:anywhere]">{r.name}</strong>
+                        <small className="block text-[0.86rem] leading-[1.45] text-ink-faint">
+                          {r.role}. Asking for {scopeNames || 'all records'} for {r.durationHours}{' '}
+                          {r.durationHours === 1 ? 'hour' : 'hours'}.
+                        </small>
+                        {r.purpose && (
+                          <p className="mt-1 text-xs text-ink-soft">
+                            <span className="font-medium text-ink-faint">Purpose:</span> {r.purpose}
+                          </p>
+                        )}
+                      </div>
+                      <div className="col-span-full grid grid-cols-2 gap-2 sm:col-span-1 sm:col-start-2 sm:flex">
+                        <button className={button('ghost', 'sm')} type="button" onClick={() => actions.declineRequest(r.id)}>
+                          Decline
+                        </button>
+                        <button className={button('primary', 'sm')} type="button" onClick={() => actions.approveRequest(r.id)}>
+                          Approve
+                        </button>
+                      </div>
+                    </li>
+                  )
+                })}
               </ul>
             )}
           </section>

@@ -14,7 +14,7 @@ import type {
 
 export type { Kind, HealthEvent, PatientProfile, PrescriptionRecord, AccessGrant, AccessRequest, Caregiver, AuditLogEntry }
 
-export const kindOrder: Kind[] = ['allergy', 'condition', 'medication', 'vaccination', 'report']
+export const kindOrder: Kind[] = ['allergy', 'condition', 'medication', 'vaccination', 'report', 'document']
 
 export const kinds: Record<Kind, { label: string; plural: string; icon: IconName }> = {
   allergy: { label: 'Allergy', plural: 'Allergies', icon: 'alert' },
@@ -22,6 +22,7 @@ export const kinds: Record<Kind, { label: string; plural: string; icon: IconName
   medication: { label: 'Medicine', plural: 'Medicines', icon: 'pill' },
   vaccination: { label: 'Vaccination', plural: 'Vaccinations', icon: 'syringe' },
   report: { label: 'Report', plural: 'Reports', icon: 'flask' },
+  document: { label: 'Document', plural: 'Documents & Files', icon: 'file' },
 }
 
 export const initialPatientProfile: PatientProfile = {
@@ -107,15 +108,7 @@ export const events: HealthEvent[] = [
 /** Sample records for the "Load sample" demo. Allergies come from seedAllergies instead. */
 export const sampleEvents: HealthEvent[] = events.filter((e) => e.kind !== 'allergy')
 
-export const initialRequests: AccessRequest[] = [
-  {
-    id: 'r1',
-    name: 'Dr. Farhan Ali',
-    role: 'Dermatologist, Skin & Care Centre',
-    scope: ['allergy', 'medication'],
-    durationHours: 2,
-  },
-]
+export const initialRequests: AccessRequest[] = []
 
 const MIN = 60_000
 const HOUR = 60 * MIN

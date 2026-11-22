@@ -72,7 +72,7 @@ export default function DoctorRequestAccess() {
             You'll be notified once the patient approves your request.
           </p>
           <div className="mt-6 flex flex-wrap items-center justify-center gap-3">
-            <button onClick={() => { setStep('search'); setMediclaimId(''); setPurpose(''); setSelectedScopes(['vaccination', 'condition', 'medication', 'allergy', 'report']); setDuration('24') }} className={`${button('soft', 'md')}`}>
+            <button onClick={() => { setStep('search'); setMediclaimId(''); setPurpose(''); setSelectedScopes(['vaccination', 'condition', 'medication', 'allergy', 'report', 'document']); setDuration('24') }} className={`${button('soft', 'md')}`}>
               Request another
             </button>
           </div>

@@ -1,4 +1,4 @@
-export type Kind = 'allergy' | 'condition' | 'medication' | 'vaccination' | 'report'
+export type Kind = 'allergy' | 'condition' | 'medication' | 'vaccination' | 'report' | 'document'
 
 export type AllergySeverity = 'mild' | 'moderate' | 'severe' | 'life-threatening'
 export type AllergyCriticality = 'low' | 'high' | 'unable-to-assess'
