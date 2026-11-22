@@ -3,7 +3,7 @@ from typing import Any, Dict, List, Literal, Optional
 from pydantic import BaseModel, Field, ConfigDict
 from app.schemas.auth import EnvelopeMeta
 
-KindType = Literal["allergy", "condition", "medication", "vaccination", "report"]
+KindType = Literal["allergy", "condition", "medication", "vaccination", "report", "document"]
 RecordStatusType = Literal["active", "resolved", "inactive", "completed", "discontinued"]
 RecordSourceType = Literal["self_reported", "uploaded", "practitioner"]
 AllergyCategoryType = Literal["food", "medication", "environment", "biologic"]

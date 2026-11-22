@@ -3,7 +3,7 @@ import hashlib
 import json
 import uuid
 from typing import Optional
-from fastapi import APIRouter, BackgroundTasks, Depends, File, Form, UploadFile, status
+from fastapi import APIRouter, BackgroundTasks, Depends, File, Form, Query, UploadFile, status
 from fastapi.responses import Response
 from app.schemas.auth import EnvelopeMeta
 from app.schemas.uploads import CommitParsedDocumentRequest

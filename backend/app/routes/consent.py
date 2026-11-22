@@ -28,14 +28,24 @@ def _make_meta(total: Optional[int] = None) -> EnvelopeMeta:
 
 
 def _get_patient_id(user: AuthenticatedUser) -> str:
-    if not user.patient_profile_id:
-        raise APIProblemException(
-            status_code=status.HTTP_403_FORBIDDEN,
-            title="Profile Incomplete",
-            detail="User does not have an active patient profile.",
-            code="PROFILE_INCOMPLETE"
-        )
-    return user.patient_profile_id
+    if user.patient_profile_id:
+        return user.patient_profile_id.replace("pat-", "").replace("pat_", "")
+    # Ensure patient profile exists for authenticated user
+    raw_uid = user.raw_uuid
+    from app.database import get_db
+    import secrets
+    with get_db() as conn:
+        row = conn.execute("SELECT id FROM patient_profiles WHERE user_id = %s", (raw_uid,)).fetchone()
+        if row:
+            return str(row["id"])
+        new_uuid = uuid.uuid4()
+        pub_id = f"pat{secrets.randbelow(900_000_000) + 100_000_000}"
+        conn.execute("""
+            INSERT INTO patient_profiles (id, public_id, user_id, created_at, updated_at)
+            VALUES (%s, %s, %s, now(), now())
+            ON CONFLICT (user_id) DO NOTHING
+        """, (str(new_uuid), raw_uid, pub_id))
+        return str(new_uuid)
 
 
 # --- Doctor Initiated Access Requests ---

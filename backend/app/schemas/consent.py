@@ -5,17 +5,17 @@ from app.schemas.auth import EnvelopeMeta
 from app.schemas.records import KindType
 
 class AccessRequestInput(BaseModel):
-    model_config = ConfigDict(extra="forbid")
-    patientMediclaimId: str = Field(min_length=10, max_length=20)
-    scope: List[KindType] = Field(min_length=1)
-    durationHours: int = Field(ge=1, le=24)
-    purpose: str = Field(min_length=5, max_length=500)
+    model_config = ConfigDict(extra="ignore")
+    patientMediclaimId: str = Field(min_length=5, max_length=30)
+    scope: List[str] = Field(min_length=1)
+    durationHours: int = Field(default=24, ge=1, le=720)
+    purpose: Optional[str] = Field(default="Clinical Consultation", max_length=500)
 
 class AccessRequest(BaseModel):
     id: str
     name: str
     role: str
-    scope: List[KindType]
+    scope: List[str]
     durationHours: int
     purpose: Optional[str] = None
     status: str = "pending"
@@ -27,16 +27,16 @@ class AccessRequestsListResponse(BaseModel):
     meta: Optional[EnvelopeMeta] = None
 
 class ApproveRequestInput(BaseModel):
-    model_config = ConfigDict(extra="forbid")
-    approvedScope: List[KindType] = Field(min_length=1)
-    durationHours: int = Field(ge=1, le=24)
+    model_config = ConfigDict(extra="ignore")
+    approvedScope: List[str] = Field(min_length=1)
+    durationHours: int = Field(default=24, ge=1, le=720)
 
 class AccessGrant(BaseModel):
     id: str
     grantId: Optional[str] = None
     name: str
     role: str
-    scope: List[KindType]
+    scope: List[str]
     validFrom: Optional[str] = None
     expiresAt: str
     grantStatus: str = "active"
@@ -47,12 +47,12 @@ class AccessGrantsListResponse(BaseModel):
     meta: Optional[EnvelopeMeta] = None
 
 class GiveAccessInput(BaseModel):
-    model_config = ConfigDict(extra="forbid")
+    model_config = ConfigDict(extra="ignore")
     practitionerId: Optional[str] = None
     name: str = Field(min_length=2, max_length=200)
     role: Optional[str] = Field(default="Practitioner", max_length=100)
-    scope: List[KindType] = Field(min_length=1)
-    durationHours: int = Field(ge=1, le=24)
+    scope: List[str] = Field(min_length=1)
+    durationHours: int = Field(default=24, ge=1, le=720)
 
 class Caregiver(BaseModel):
     id: str

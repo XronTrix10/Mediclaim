@@ -27,18 +27,25 @@ def _format_date(dt: Any) -> str:
 
 
 def create_access_request(doctor_user: AuthenticatedUser, payload) -> Dict[str, Any]:
-    clean_med_id = normalize_mediclaim_id(payload.patientMediclaimId)
+    raw_med_id = getattr(payload, "patientMediclaimId", "") or ""
+    clean_med_id = normalize_mediclaim_id(raw_med_id)
+    raw_clean_id = raw_med_id.strip()
     now = _now_utc()
     req_expires = now + timedelta(hours=24)
     raw_doc_id = doctor_user.raw_uuid
+    import secrets
 
     with get_db() as conn:
         patient = conn.execute("""
-            SELECT p.id AS patient_id, u.id AS user_id
+            SELECT p.id AS patient_profile_id, u.id AS user_id, u.mediclaim_id, u.full_name
             FROM users u
-            JOIN patient_profiles p ON p.user_id = u.id
-            WHERE u.mediclaim_id = %s OR u.public_id = %s
-        """, (clean_med_id, clean_med_id)).fetchone()
+            LEFT JOIN patient_profiles p ON p.user_id = u.id
+            WHERE REPLACE(REPLACE(u.mediclaim_id, ' ', ''), '-', '') = %s
+               OR u.mediclaim_id = %s
+               OR u.public_id = %s
+               OR REPLACE(REPLACE(u.phone, ' ', ''), '+91', '') = %s
+            LIMIT 1
+        """, (clean_med_id, raw_clean_id, raw_clean_id, clean_med_id)).fetchone()
 
         if not patient:
             raise APIProblemException(
@@ -47,6 +54,18 @@ def create_access_request(doctor_user: AuthenticatedUser, payload) -> Dict[str, 
                 detail=f"No patient registered with Mediclaim ID {payload.patientMediclaimId}.",
                 code="RECORD_NOT_FOUND"
             )
+
+        if not patient["patient_profile_id"]:
+            pat_uuid = uuid.uuid4()
+            pub_pat_id = f"pat{secrets.randbelow(900_000_000) + 100_000_000}"
+            conn.execute("""
+                INSERT INTO patient_profiles (id, public_id, user_id, created_at, updated_at)
+                VALUES (%s, %s, %s, now(), now())
+                ON CONFLICT (user_id) DO NOTHING
+            """, (str(pat_uuid), str(patient["user_id"]), pub_pat_id))
+            patient_profile_id = str(pat_uuid)
+        else:
+            patient_profile_id = str(patient["patient_profile_id"])
 
         grant_uuid = uuid.uuid4()
         grant_id = f"grt_{grant_uuid}"
@@ -61,6 +80,10 @@ def create_access_request(doctor_user: AuthenticatedUser, payload) -> Dict[str, 
             if doc_profile and doc_profile.get("specialization"):
                 doctor_role = doc_profile["specialization"]
 
+        doc_name = doctor_user.full_name or "Doctor"
+        if not doc_name.lower().startswith("dr.") and not doc_name.lower().startswith("dr "):
+            doc_name = f"Dr. {doc_name}"
+
         conn.execute("""
             INSERT INTO patient_access_grants (
                 id, patient_id, grantee_user_id, granted_by, purpose,
@@ -72,8 +95,8 @@ def create_access_request(doctor_user: AuthenticatedUser, payload) -> Dict[str, 
                 %s, now()
             )
         """, (
-            str(grant_uuid), str(patient["patient_id"]), raw_doc_id, str(patient["user_id"]),
-            payload.purpose, now, req_expires, doctor_user.full_name, doctor_role,
+            str(grant_uuid), patient_profile_id, raw_doc_id, str(patient["user_id"]),
+            payload.purpose or "Clinical Consultation", now, req_expires, doc_name, doctor_role,
             payload.durationHours
         ))
 
@@ -87,7 +110,7 @@ def create_access_request(doctor_user: AuthenticatedUser, payload) -> Dict[str, 
 
     return {
         "requestId": req_id,
-        "patientMediclaimId": format_mediclaim_id(clean_med_id),
+        "patientMediclaimId": format_mediclaim_id(patient.get("mediclaim_id") or clean_med_id),
         "expiresAt": _format_iso(req_expires)
     }
 
@@ -100,7 +123,7 @@ def list_access_requests(patient_profile_id: str, status_filter: str = "pending"
                    COALESCE(array_agg(s.record_type) FILTER (WHERE s.record_type IS NOT NULL), '{}') AS scopes
             FROM patient_access_grants g
             LEFT JOIN access_grant_scopes s ON s.access_grant_id = g.id
-            WHERE g.patient_id = %s AND g.status = %s
+            WHERE g.patient_id::text = %s AND g.status = %s
             GROUP BY g.id
             ORDER BY g.created_at DESC
         """, (raw_pat_id, status_filter)).fetchall()
@@ -129,7 +152,7 @@ def approve_access_request(patient_profile_id: str, request_id: str, payload) ->
     with get_db() as conn:
         grant = conn.execute("""
             SELECT * FROM patient_access_grants
-            WHERE id::text = %s AND patient_id = %s
+            WHERE id::text = %s AND patient_id::text = %s
         """, (raw_req_id, raw_pat_id)).fetchone()
 
         if not grant:
@@ -146,11 +169,11 @@ def approve_access_request(patient_profile_id: str, request_id: str, payload) ->
                 valid_from = %s,
                 expires_at = %s,
                 duration_hours = %s
-            WHERE id = %s
+            WHERE id::text = %s
         """, (now, expires, payload.durationHours, raw_req_id))
 
         # Re-set approved scopes
-        conn.execute("DELETE FROM access_grant_scopes WHERE access_grant_id = %s", (raw_req_id,))
+        conn.execute("DELETE FROM access_grant_scopes WHERE access_grant_id::text = %s", (raw_req_id,))
         for sc in payload.approvedScope:
             conn.execute("""
                 INSERT INTO access_grant_scopes (id, access_grant_id, record_type, permission)
@@ -177,7 +200,7 @@ def decline_access_request(patient_profile_id: str, request_id: str) -> None:
         res = conn.execute("""
             UPDATE patient_access_grants
             SET status = 'revoked', deleted_at = now()
-            WHERE id::text = %s AND patient_id = %s
+            WHERE id::text = %s AND patient_id::text = %s
         """, (raw_req_id, raw_pat_id))
         if res.rowcount == 0:
             raise APIProblemException(
