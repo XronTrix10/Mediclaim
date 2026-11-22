@@ -15,9 +15,9 @@ def _format_iso(dt: Optional[datetime]) -> str:
 
 def record_audit(
     actor_user_id: Optional[str],
-    patient_id: Optional[str],
-    action: str,
-    what: str,
+    patient_id: Optional[str] = None,
+    action: str = "audit",
+    what: str = "",
     actor_name: str = "System",
     actor_role: str = "System",
     resource_kinds: Optional[List[str]] = None,

@@ -27,6 +27,7 @@ const paths = {
   'drop-blood': 'M12 2.69l5.66 5.66a8 8 0 1 1-11.31 0z',
   person: 'M12 12a4 4 0 1 0 0-8 4 4 0 0 0 0 8z M6 20v-1a6 6 0 0 1 12 0v1',
   image: 'M19 3H5a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h14a2 2 0 0 0 2-2V5a2 2 0 0 0-2-2z M8.5 10a1.5 1.5 0 1 0 0-3 1.5 1.5 0 0 0 0 3z M21 15l-5-5L5 21',
+  trash: 'M3 6h18 M19 6v14a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V6m3 0V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2 M10 11v6 M14 11v6',
 } as const
 
 export type IconName = keyof typeof paths

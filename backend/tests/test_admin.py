@@ -10,7 +10,8 @@ from app.routes.auth import register
 from app.routes.admin import (
     get_pending_verifications, get_patient_verification_detail,
     approve_patient_verification, reject_patient_verification,
-    get_system_stats, get_all_patients
+    get_system_stats, get_all_patients,
+    delete_patient, delete_practitioner, delete_organization, delete_user
 )
 from app.security import AuthenticatedUser
 
@@ -113,6 +114,63 @@ class TestAdminPortalService(unittest.TestCase):
         patients_res = get_all_patients(limit=10, query="Sunita", current_user=self.admin_user)
         self.assertEqual(patients_res["status"], "success")
         self.assertTrue(any(p["userId"] == patient_user_id for p in patients_res["data"]))
+
+        # 8. Admin removes patient
+        del_res = delete_patient(patient_id=patient_user_id, current_user=self.admin_user)
+        self.assertEqual(del_res["status"], "success")
+        self.assertTrue(del_res["data"]["removed"])
+
+        # 9. Verify patient is completely removed
+        with get_db() as conn:
+            check_u = conn.execute("SELECT id FROM users WHERE id = %s", (patient_user_id.replace("usr_", ""),)).fetchone()
+            self.assertIsNone(check_u)
+
+    def test_admin_remove_doctor(self):
+        from app.services.hospital_service import create_practitioner
+        from app.schemas.hospital import PractitionerCreateInput
+
+        doc_phone = f"+9196{secrets.randbelow(90000000) + 10000000}"
+        doc_reg = f"TEST-REG-{secrets.token_hex(4).upper()}"
+        doc_res = create_practitioner(PractitionerCreateInput(
+            fullName="Dr. Alok Verma",
+            registrationNumber=doc_reg,
+            phone=doc_phone,
+            password="DoctorSecurePass1!",
+            specialization="Neurology"
+        ))
+        practitioner_id = doc_res["id"]
+
+        del_res = delete_practitioner(practitioner_id=practitioner_id, current_user=self.admin_user)
+        self.assertEqual(del_res["status"], "success")
+        self.assertTrue(del_res["data"]["removed"])
+
+        # Verify doctor is removed
+        with get_db() as conn:
+            check_p = conn.execute("SELECT id FROM practitioner_profiles WHERE registration_number = %s", (doc_reg,)).fetchone()
+            self.assertIsNone(check_p)
+
+    def test_admin_remove_organization(self):
+        from app.services.hospital_service import create_organization
+        from app.schemas.hospital import OrganizationCreateInput
+
+        org_reg = f"TEST-HOSP-{secrets.token_hex(4).upper()}"
+        org_res = create_organization(OrganizationCreateInput(
+            name="Apex Specialty Clinic",
+            organizationType="clinic",
+            registrationNumber=org_reg,
+            phone="+919500000001",
+            address="123 Health Ave"
+        ))
+        org_id = org_res["publicId"]
+
+        del_res = delete_organization(org_id=org_id, current_user=self.admin_user)
+        self.assertEqual(del_res["status"], "success")
+        self.assertTrue(del_res["data"]["removed"])
+
+        # Verify organization is removed
+        with get_db() as conn:
+            check_o = conn.execute("SELECT id FROM healthcare_organizations WHERE registration_number = %s", (org_reg,)).fetchone()
+            self.assertIsNone(check_o)
 
 
 if __name__ == "__main__":

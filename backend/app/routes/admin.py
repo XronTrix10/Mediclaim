@@ -10,7 +10,8 @@ from app.schemas.admin import (
 )
 from app.services.admin_service import (
     list_pending_verifications, get_verification_detail, approve_patient,
-    reject_patient, get_admin_stats, list_all_patients, list_global_emergency_events
+    reject_patient, get_admin_stats, list_all_patients, list_global_emergency_events,
+    remove_patient, remove_practitioner, remove_organization, remove_user
 )
 from app.security import require_role, AuthenticatedUser
 
@@ -145,3 +146,60 @@ def get_emergency_events(
         "data": items,
         "meta": _make_meta(total=total),
     }
+
+
+@router.delete("/patients/{patient_id}", response_model=MessageResponse, status_code=status.HTTP_200_OK)
+def delete_patient(
+    patient_id: str,
+    current_user: AuthenticatedUser = Depends(require_role("admin", "hospital_admin")),
+):
+    res = remove_patient(current_user, patient_id)
+    return {
+        "status": "success",
+        "message": res["message"],
+        "data": res,
+        "meta": _make_meta(),
+    }
+
+
+@router.delete("/practitioners/{practitioner_id}", response_model=MessageResponse, status_code=status.HTTP_200_OK)
+def delete_practitioner(
+    practitioner_id: str,
+    current_user: AuthenticatedUser = Depends(require_role("admin", "hospital_admin")),
+):
+    res = remove_practitioner(current_user, practitioner_id)
+    return {
+        "status": "success",
+        "message": res["message"],
+        "data": res,
+        "meta": _make_meta(),
+    }
+
+
+@router.delete("/organizations/{org_id}", response_model=MessageResponse, status_code=status.HTTP_200_OK)
+def delete_organization(
+    org_id: str,
+    current_user: AuthenticatedUser = Depends(require_role("admin", "hospital_admin")),
+):
+    res = remove_organization(current_user, org_id)
+    return {
+        "status": "success",
+        "message": res["message"],
+        "data": res,
+        "meta": _make_meta(),
+    }
+
+
+@router.delete("/users/{user_id}", response_model=MessageResponse, status_code=status.HTTP_200_OK)
+def delete_user(
+    user_id: str,
+    current_user: AuthenticatedUser = Depends(require_role("admin", "hospital_admin")),
+):
+    res = remove_user(current_user, user_id)
+    return {
+        "status": "success",
+        "message": res["message"],
+        "data": res,
+        "meta": _make_meta(),
+    }
+

@@ -4,7 +4,7 @@ import Modal from '../../components/Modal'
 import Icon from '../../components/Icon'
 import { card, avatar, emptyBox, button, label } from '../../lib/ui'
 import { formatDate, initials } from '../../lib/format'
-import { getAllPatients, getPatientVerificationDetail } from '../../api/admin'
+import { getAllPatients, getPatientVerificationDetail, removePatient } from '../../api/admin'
 import type { VerificationDetail } from '../../api/admin'
 
 interface Patient {
@@ -36,9 +36,10 @@ interface PatientDetailModalProps {
   open: boolean
   userId: string | null
   onClose: () => void
+  onRemove?: () => void
 }
 
-function PatientDetailModal({ open, userId, onClose }: PatientDetailModalProps) {
+function PatientDetailModal({ open, userId, onClose, onRemove }: PatientDetailModalProps) {
   const [detail, setDetail] = useState<VerificationDetail | null>(null)
   const [loading, setLoading] = useState(false)
   const [err, setErr] = useState<string | null>(null)
@@ -160,7 +161,18 @@ function PatientDetailModal({ open, userId, onClose }: PatientDetailModalProps) 
             </div>
           )}
 
-          <div className="flex justify-end border-t border-line pt-4">
+          <div className="flex items-center justify-between border-t border-line pt-4">
+            <button
+              type="button"
+              onClick={() => {
+                onClose()
+                onRemove?.()
+              }}
+              className={button('danger', 'sm')}
+            >
+              <Icon name="trash" size={15} />
+              Remove Patient
+            </button>
             <button type="button" onClick={onClose} className={button('ghost', 'sm')}>
               Close
             </button>
@@ -180,6 +192,9 @@ export default function AdminPatients() {
   const [page, setPage] = useState(1)
   const [selectedUserId, setSelectedUserId] = useState<string | null>(null)
   const [detailOpen, setDetailOpen] = useState(false)
+  const [removeTarget, setRemoveTarget] = useState<Patient | null>(null)
+  const [removing, setRemoving] = useState(false)
+  const [removeErr, setRemoveErr] = useState<string | null>(null)
   const limit = 20
 
   // Debounce search
@@ -209,6 +224,25 @@ export default function AdminPatients() {
   const openPatientDetail = (userId: string) => {
     setSelectedUserId(userId)
     setDetailOpen(true)
+  }
+
+  const handleRemoveConfirm = async () => {
+    if (!removeTarget) return
+    setRemoving(true)
+    setRemoveErr(null)
+    try {
+      await removePatient(removeTarget.userId)
+      setRemoveTarget(null)
+      if (selectedUserId === removeTarget.userId) {
+        setDetailOpen(false)
+        setSelectedUserId(null)
+      }
+      load()
+    } catch (err: any) {
+      setRemoveErr(err?.message || 'Failed to remove patient')
+    } finally {
+      setRemoving(false)
+    }
   }
 
   return (
@@ -244,19 +278,20 @@ export default function AdminPatients() {
         ) : (
           <>
             {/* Desktop header */}
-            <div className="mb-2 hidden grid-cols-[2fr_1.5fr_1.5fr_1fr_auto] gap-4 px-3 text-[0.78rem] font-semibold uppercase tracking-wide text-ink-faint sm:grid">
+            <div className="mb-2 hidden grid-cols-[2fr_1.5fr_1.5fr_1fr_1fr_auto] gap-4 px-3 text-[0.78rem] font-semibold uppercase tracking-wide text-ink-faint sm:grid">
               <span>Patient</span>
               <span>Mediclaim ID</span>
               <span>Phone</span>
               <span>Registered</span>
               <span>Status</span>
+              <span className="text-right">Actions</span>
             </div>
             <div className="divide-y divide-line">
               {patients.map((p) => (
                 <div
                   key={p.userId}
                   onClick={() => openPatientDetail(p.userId)}
-                  className="flex items-center gap-4 py-3.5 px-3 rounded-2xl cursor-pointer hover:bg-surface-tint/60 transition-colors sm:grid sm:grid-cols-[2fr_1.5fr_1.5fr_1fr_auto]"
+                  className="flex items-center gap-4 py-3.5 px-3 rounded-2xl cursor-pointer hover:bg-surface-tint/60 transition-colors sm:grid sm:grid-cols-[2fr_1.5fr_1.5fr_1fr_1fr_auto]"
                 >
                   <div className="flex items-center gap-3 min-w-0">
                     <span className={`${avatar} shrink-0`}>{initials(p.fullName)}</span>
@@ -284,6 +319,16 @@ export default function AdminPatients() {
                         Pending
                       </span>
                     )}
+                  </div>
+                  <div className="flex items-center justify-end gap-1" onClick={(e) => e.stopPropagation()}>
+                    <button
+                      type="button"
+                      onClick={() => setRemoveTarget(p)}
+                      className="p-1.5 text-ink-faint hover:text-allergy-ink hover:bg-allergy-tint/60 rounded-lg transition-colors cursor-pointer"
+                      title="Remove Patient"
+                    >
+                      <Icon name="trash" size={16} />
+                    </button>
                     <Icon name="chevron-right" size={16} className="text-ink-faint hidden sm:block" />
                   </div>
                 </div>
@@ -324,7 +369,53 @@ export default function AdminPatients() {
         open={detailOpen}
         userId={selectedUserId}
         onClose={() => setDetailOpen(false)}
+        onRemove={() => {
+          const match = patients.find((p) => p.userId === selectedUserId)
+          if (match) setRemoveTarget(match)
+        }}
       />
+
+      {/* Confirmation Modal */}
+      <Modal
+        open={Boolean(removeTarget)}
+        title="Remove Patient"
+        icon="alert"
+        size="md"
+        onClose={() => !removing && setRemoveTarget(null)}
+      >
+        <div className="space-y-4">
+          <p className="text-sm text-ink-soft">
+            Are you sure you want to permanently remove <strong className="text-ink font-semibold">{removeTarget?.fullName}</strong>
+            {removeTarget?.mediclaimId ? ` (${removeTarget.mediclaimId})` : ''}?
+          </p>
+          <div className="rounded-[14px] bg-allergy-tint/50 border border-allergy/20 p-3 text-xs text-allergy-ink">
+            This action cannot be undone. All personal records, prescriptions, and access grants associated with this patient will be permanently removed.
+          </div>
+          {removeErr && (
+            <div className="rounded-[14px] bg-allergy-tint p-3 text-xs text-allergy-ink">
+              {removeErr}
+            </div>
+          )}
+          <div className="flex justify-end gap-2.5 pt-2">
+            <button
+              type="button"
+              disabled={removing}
+              onClick={() => setRemoveTarget(null)}
+              className={button('ghost', 'sm')}
+            >
+              Cancel
+            </button>
+            <button
+              type="button"
+              disabled={removing}
+              onClick={handleRemoveConfirm}
+              className={button('danger', 'sm')}
+            >
+              {removing ? 'Removing…' : 'Yes, Remove Patient'}
+            </button>
+          </div>
+        </div>
+      </Modal>
     </div>
   )
 }

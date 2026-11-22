@@ -145,3 +145,32 @@ export async function getGlobalEmergencyEvents(): Promise<GlobalEmergencyEvent[]
   )
   return res.data
 }
+
+export async function removePatient(patientIdOrUserId: string): Promise<void> {
+  await request<{ status: string; message: string }>(
+    `/admin/patients/${patientIdOrUserId}`,
+    { method: 'DELETE' }
+  )
+}
+
+export async function removePractitioner(practitionerIdOrUserId: string): Promise<void> {
+  await request<{ status: string; message: string }>(
+    `/admin/practitioners/${practitionerIdOrUserId}`,
+    { method: 'DELETE' }
+  )
+}
+
+export async function removeOrganization(orgId: string): Promise<void> {
+  await request<{ status: string; message: string }>(
+    `/admin/organizations/${orgId}`,
+    { method: 'DELETE' }
+  )
+}
+
+export async function removeUser(userId: string): Promise<void> {
+  await request<{ status: string; message: string }>(
+    `/admin/users/${userId}`,
+    { method: 'DELETE' }
+  )
+}
+

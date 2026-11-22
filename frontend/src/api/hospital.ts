@@ -120,3 +120,18 @@ export async function getPractitionerDetail(practitionerId: string): Promise<Pra
   )
   return res.data
 }
+
+export async function deletePractitioner(practitionerId: string): Promise<void> {
+  await request<{ status: string; message: string }>(
+    `/hospital/practitioners/${practitionerId}`,
+    { method: 'DELETE' }
+  )
+}
+
+export async function deleteOrganization(orgId: string): Promise<void> {
+  await request<{ status: string; message: string }>(
+    `/hospital/organizations/${orgId}`,
+    { method: 'DELETE' }
+  )
+}
+

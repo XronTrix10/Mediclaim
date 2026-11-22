@@ -44,3 +44,17 @@ def delete_document_bytes(storage_key: str) -> bool:
         os.remove(target)
         return True
     return False
+
+
+def delete_patient_storage(patient_id: str) -> bool:
+    """Recursively delete the storage directory and all uploaded files for the patient."""
+    if not patient_id:
+        return False
+    clean_id = patient_id.replace("pat-", "").replace("pat_", "").strip()
+    base = Path(STORAGE_DIR).resolve()
+    target_dir = (base / "documents" / clean_id).resolve()
+    if target_dir.exists() and target_dir.is_dir() and base in target_dir.parents:
+        import shutil
+        shutil.rmtree(target_dir, ignore_errors=True)
+        return True
+    return False

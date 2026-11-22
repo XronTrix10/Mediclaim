@@ -424,3 +424,367 @@ def list_global_emergency_events(limit: int = 50, offset: int = 0) -> Tuple[List
         })
 
     return items, total
+
+
+def remove_patient(admin_user: AuthenticatedUser, identifier: str) -> Dict[str, Any]:
+    raw = identifier.replace("usr-", "").replace("usr_", "").replace("pat-", "").replace("pat_", "").strip()
+    clean_med = raw.replace(" ", "").replace("-", "")
+
+    with get_db() as conn:
+        user = conn.execute("""
+            SELECT u.id AS user_id, u.full_name, u.phone, u.mediclaim_id, p.id AS patient_profile_id
+            FROM users u
+            LEFT JOIN patient_profiles p ON p.user_id = u.id
+            WHERE u.id::text = %s
+               OR p.id::text = %s
+               OR u.public_id = %s
+               OR p.public_id = %s
+               OR u.mediclaim_id = %s
+               OR REPLACE(REPLACE(u.mediclaim_id, ' ', ''), '-', '') = %s
+               OR u.phone = %s
+            LIMIT 1
+        """, (raw, raw, raw, raw, raw, clean_med, raw)).fetchone()
+
+        if not user:
+            raise APIProblemException(
+                status_code=status.HTTP_404_NOT_FOUND,
+                title="Patient Not Found",
+                detail=f"Patient identifier '{identifier}' was not found.",
+                code="PATIENT_NOT_FOUND"
+            )
+
+        user_id = str(user["user_id"])
+        pat_id = str(user["patient_profile_id"]) if user.get("patient_profile_id") else None
+
+        # Clean up related records
+        # Collect storage keys for physical file deletion
+        storage_keys = []
+        if pat_id:
+            doc_rows = conn.execute("""
+                SELECT storage_key FROM medical_documents WHERE patient_id = %s
+                UNION
+                SELECT storage_key FROM document_versions
+                WHERE document_id IN (SELECT id FROM medical_documents WHERE patient_id = %s)
+            """, (pat_id, pat_id)).fetchall()
+            for r in doc_rows:
+                if r.get("storage_key"):
+                    storage_keys.append(r["storage_key"])
+
+        u_doc_rows = conn.execute("""
+            SELECT storage_key FROM medical_documents WHERE uploaded_by = %s
+            UNION
+            SELECT storage_key FROM document_versions WHERE uploaded_by = %s
+        """, (user_id, user_id)).fetchall()
+        for r in u_doc_rows:
+            if r.get("storage_key"):
+                storage_keys.append(r["storage_key"])
+
+        if pat_id:
+            # Grants & scopes
+            conn.execute("""
+                DELETE FROM access_grant_scopes
+                WHERE access_grant_id IN (
+                    SELECT id FROM patient_access_grants WHERE patient_id = %s
+                )
+            """, (pat_id,))
+            conn.execute("DELETE FROM patient_access_grants WHERE patient_id = %s", (pat_id,))
+            conn.execute("DELETE FROM consent_records WHERE patient_id = %s", (pat_id,))
+            conn.execute("DELETE FROM record_correction_requests WHERE patient_id = %s", (pat_id,))
+
+            # Documents
+            conn.execute("""
+                DELETE FROM document_versions
+                WHERE document_id IN (SELECT id FROM medical_documents WHERE patient_id = %s)
+            """, (pat_id,))
+            conn.execute("DELETE FROM medical_documents WHERE patient_id = %s", (pat_id,))
+
+            # Diagnostic reports & lab results
+            conn.execute("""
+                DELETE FROM lab_results
+                WHERE diagnostic_report_id IN (SELECT id FROM diagnostic_reports WHERE patient_id = %s)
+            """, (pat_id,))
+            conn.execute("DELETE FROM diagnostic_reports WHERE patient_id = %s", (pat_id,))
+
+            # Procedures, hospitalizations, observations, vaccinations
+            conn.execute("DELETE FROM hospitalizations WHERE patient_id = %s", (pat_id,))
+            conn.execute("DELETE FROM procedures WHERE patient_id = %s", (pat_id,))
+            conn.execute("DELETE FROM observations WHERE patient_id = %s", (pat_id,))
+            conn.execute("DELETE FROM vaccinations WHERE patient_id = %s", (pat_id,))
+
+            # Medications & Prescriptions
+            conn.execute("DELETE FROM medication_statements WHERE patient_id = %s", (pat_id,))
+            conn.execute("""
+                DELETE FROM prescription_items
+                WHERE prescription_id IN (SELECT id FROM prescriptions WHERE patient_id = %s)
+                   OR patient_id = %s
+            """, (pat_id, pat_id))
+            conn.execute("DELETE FROM prescriptions WHERE patient_id = %s", (pat_id,))
+
+            # Conditions & Allergies
+            conn.execute("DELETE FROM conditions WHERE patient_id = %s", (pat_id,))
+            conn.execute("DELETE FROM allergies WHERE patient_id = %s", (pat_id,))
+
+            # Record correction requests
+            conn.execute("DELETE FROM record_correction_requests WHERE patient_id = %s", (pat_id,))
+
+            # Clinical records & versions
+            conn.execute("""
+                DELETE FROM clinical_record_versions
+                WHERE clinical_record_id IN (SELECT id FROM clinical_records WHERE patient_id = %s)
+            """, (pat_id,))
+            conn.execute("DELETE FROM clinical_records WHERE patient_id = %s", (pat_id,))
+
+            # Encounters & Caregivers
+            conn.execute("DELETE FROM encounters WHERE patient_id = %s", (pat_id,))
+            conn.execute("DELETE FROM patient_caregivers WHERE patient_id = %s", (pat_id,))
+
+            # Nullify audit references
+            conn.execute("UPDATE audit_events SET patient_id = NULL WHERE patient_id = %s", (pat_id,))
+
+        # Clean user-level references
+        conn.execute("DELETE FROM record_correction_requests WHERE requested_by = %s OR reviewed_by = %s", (user_id, user_id))
+        conn.execute("DELETE FROM patient_access_grants WHERE granted_by = %s OR grantee_user_id = %s", (user_id, user_id))
+        conn.execute("DELETE FROM consent_records WHERE granted_by = %s OR granted_to_user_id = %s", (user_id, user_id))
+        conn.execute("DELETE FROM document_versions WHERE uploaded_by = %s", (user_id,))
+        conn.execute("DELETE FROM medical_documents WHERE uploaded_by = %s", (user_id,))
+        conn.execute("DELETE FROM clinical_record_versions WHERE changed_by = %s", (user_id,))
+        conn.execute("DELETE FROM clinical_records WHERE created_by = %s", (user_id,))
+        conn.execute("DELETE FROM organization_memberships WHERE user_id = %s", (user_id,))
+        conn.execute("UPDATE audit_events SET actor_user_id = NULL WHERE actor_user_id = %s", (user_id,))
+
+        # Delete patient profile and user
+        if pat_id:
+            conn.execute("DELETE FROM patient_profiles WHERE id = %s", (pat_id,))
+        conn.execute("DELETE FROM user_roles WHERE user_id = %s", (user_id,))
+        conn.execute("DELETE FROM users WHERE id = %s", (user_id,))
+
+        record_audit(
+            actor_user_id=admin_user.id,
+            patient_id=None,
+            action="remove",
+            what=f"Admin removed registered patient {user['full_name']} ({user.get('mediclaim_id') or user_id})",
+            actor_name=admin_user.full_name,
+            actor_role="admin",
+            extra_metadata={"removed_patient_id": pat_id, "removed_user_id": user_id},
+        )
+
+        # Delete physical files and storage folder from disk
+        from app.services.storage_service import delete_document_bytes, delete_patient_storage
+        for sk in set(storage_keys):
+            delete_document_bytes(sk)
+        if pat_id:
+            delete_patient_storage(pat_id)
+
+    logger.info("Admin removed patient user %s (%s)", user_id, user["full_name"])
+    return {
+        "userId": f"usr_{user_id}",
+        "fullName": user["full_name"],
+        "removed": True,
+        "message": f"Patient {user['full_name']} removed successfully."
+    }
+
+
+def remove_practitioner(admin_user: AuthenticatedUser, identifier: str) -> Dict[str, Any]:
+    raw = identifier.replace("doc-", "").replace("doc_", "").replace("usr-", "").replace("usr_", "").strip()
+
+    with get_db() as conn:
+        doc = conn.execute("""
+            SELECT u.id AS user_id, u.full_name, u.phone, u.doctor_id,
+                   pr.id AS practitioner_profile_id, pr.registration_number
+            FROM users u
+            LEFT JOIN practitioner_profiles pr ON pr.user_id = u.id
+            WHERE u.id::text = %s
+               OR pr.id::text = %s
+               OR u.public_id = %s
+               OR pr.public_id = %s
+               OR u.doctor_id = %s
+               OR pr.doctor_id = %s
+               OR pr.registration_number = %s
+               OR u.phone = %s
+            LIMIT 1
+        """, (raw, raw, raw, raw, raw, raw, raw, raw)).fetchone()
+
+        if not doc:
+            raise APIProblemException(
+                status_code=status.HTTP_404_NOT_FOUND,
+                title="Practitioner Not Found",
+                detail=f"Doctor/Practitioner identifier '{identifier}' was not found.",
+                code="PRACTITIONER_NOT_FOUND"
+            )
+
+        user_id = str(doc["user_id"])
+        prac_id = str(doc["practitioner_profile_id"]) if doc.get("practitioner_profile_id") else None
+
+        if prac_id:
+            # Prescriptions
+            conn.execute("""
+                DELETE FROM prescription_items
+                WHERE prescription_id IN (SELECT id FROM prescriptions WHERE practitioner_id = %s)
+            """, (prac_id,))
+            conn.execute("DELETE FROM prescriptions WHERE practitioner_id = %s", (prac_id,))
+
+            # Encounters tied to this practitioner
+            enc_rows = conn.execute("SELECT id FROM encounters WHERE practitioner_id = %s", (prac_id,)).fetchall()
+            for enc in enc_rows:
+                enc_id = str(enc["id"])
+                conn.execute("DELETE FROM observations WHERE encounter_id = %s", (enc_id,))
+                conn.execute("DELETE FROM procedures WHERE encounter_id = %s", (enc_id,))
+                conn.execute("DELETE FROM hospitalizations WHERE attending_practitioner_id = %s", (prac_id,))
+                conn.execute("DELETE FROM diagnostic_reports WHERE encounter_id = %s", (enc_id,))
+                conn.execute("""
+                    DELETE FROM clinical_record_versions
+                    WHERE clinical_record_id IN (SELECT id FROM clinical_records WHERE encounter_id = %s)
+                """, (enc_id,))
+                conn.execute("DELETE FROM clinical_records WHERE encounter_id = %s", (enc_id,))
+                conn.execute("DELETE FROM encounters WHERE id = %s", (enc_id,))
+
+            # Clean remaining references
+            conn.execute("UPDATE diagnostic_reports SET ordered_by = NULL WHERE ordered_by = %s", (prac_id,))
+            conn.execute("UPDATE procedures SET practitioner_id = NULL WHERE practitioner_id = %s", (prac_id,))
+            conn.execute("UPDATE hospitalizations SET attending_practitioner_id = NULL WHERE attending_practitioner_id = %s", (prac_id,))
+
+        # Clean user-level references
+        conn.execute("""
+            DELETE FROM access_grant_scopes
+            WHERE access_grant_id IN (
+                SELECT id FROM patient_access_grants WHERE grantee_user_id = %s OR granted_by = %s
+            )
+        """, (user_id, user_id))
+        conn.execute("DELETE FROM patient_access_grants WHERE grantee_user_id = %s OR granted_by = %s", (user_id, user_id))
+        conn.execute("DELETE FROM consent_records WHERE granted_to_user_id = %s OR granted_by = %s", (user_id, user_id))
+        conn.execute("DELETE FROM organization_memberships WHERE user_id = %s", (user_id,))
+        conn.execute("UPDATE clinical_record_versions SET changed_by = NULL WHERE changed_by = %s", (user_id,))
+        conn.execute("UPDATE clinical_records SET created_by = NULL WHERE created_by = %s", (user_id,))
+        conn.execute("UPDATE medical_documents SET uploaded_by = NULL WHERE uploaded_by = %s", (user_id,))
+        conn.execute("UPDATE document_versions SET uploaded_by = NULL WHERE uploaded_by = %s", (user_id,))
+        conn.execute("UPDATE vaccinations SET administered_by = NULL WHERE administered_by = %s", (user_id,))
+        conn.execute("UPDATE record_correction_requests SET requested_by = NULL WHERE requested_by = %s", (user_id,))
+        conn.execute("UPDATE record_correction_requests SET reviewed_by = NULL WHERE reviewed_by = %s", (user_id,))
+        conn.execute("UPDATE audit_events SET actor_user_id = NULL WHERE actor_user_id = %s", (user_id,))
+
+        if prac_id:
+            conn.execute("DELETE FROM practitioner_profiles WHERE id = %s", (prac_id,))
+        conn.execute("DELETE FROM user_roles WHERE user_id = %s", (user_id,))
+        conn.execute("DELETE FROM users WHERE id = %s", (user_id,))
+
+        record_audit(
+            actor_user_id=admin_user.id,
+            patient_id=None,
+            action="remove",
+            what=f"Admin removed registered doctor {doc['full_name']} ({doc.get('doctor_id') or user_id})",
+            actor_name=admin_user.full_name,
+            actor_role="admin",
+        )
+
+    logger.info("Admin removed doctor %s (%s)", user_id, doc["full_name"])
+    return {
+        "userId": f"usr_{user_id}",
+        "fullName": doc["full_name"],
+        "removed": True,
+        "message": f"Doctor {doc['full_name']} removed successfully."
+    }
+
+
+def remove_organization(admin_user: AuthenticatedUser, identifier: str) -> Dict[str, Any]:
+    raw = identifier.replace("org-", "").replace("org_", "").replace("usr-", "").replace("usr_", "").strip()
+
+    with get_db() as conn:
+        org = conn.execute("""
+            SELECT ho.id AS organization_id, ho.name, ho.hospital_id, ho.registration_number,
+                   ho.public_id, om.user_id AS admin_user_id
+            FROM healthcare_organizations ho
+            LEFT JOIN organization_memberships om ON om.organization_id = ho.id AND om.designation ILIKE '%%admin%%'
+            LEFT JOIN users u ON u.id = om.user_id OR u.hospital_id = ho.hospital_id
+            WHERE ho.id::text = %s
+               OR ho.public_id = %s
+               OR ho.hospital_id = %s
+               OR ho.registration_number = %s
+               OR u.id::text = %s
+            LIMIT 1
+        """, (raw, raw, raw, raw, raw)).fetchone()
+
+        if not org:
+            raise APIProblemException(
+                status_code=status.HTTP_404_NOT_FOUND,
+                title="Organization Not Found",
+                detail=f"Organization identifier '{identifier}' was not found.",
+                code="ORGANIZATION_NOT_FOUND"
+            )
+
+        org_id = str(org["organization_id"])
+        hosp_id = org.get("hospital_id")
+
+        # Nullify organization references
+        conn.execute("UPDATE encounters SET organization_id = NULL WHERE organization_id = %s", (org_id,))
+        conn.execute("UPDATE prescriptions SET organization_id = NULL WHERE organization_id = %s", (org_id,))
+        conn.execute("UPDATE vaccinations SET organization_id = NULL WHERE organization_id = %s", (org_id,))
+        conn.execute("UPDATE diagnostic_reports SET organization_id = NULL WHERE organization_id = %s", (org_id,))
+        conn.execute("UPDATE procedures SET organization_id = NULL WHERE organization_id = %s", (org_id,))
+        conn.execute("UPDATE hospitalizations SET organization_id = NULL WHERE organization_id = %s", (org_id,))
+        conn.execute("UPDATE consent_records SET organization_id = NULL WHERE organization_id = %s", (org_id,))
+        conn.execute("UPDATE patient_access_grants SET organization_id = NULL WHERE organization_id = %s", (org_id,))
+
+        # Find users who are hospital admins specifically for this organization
+        hosp_users = conn.execute("""
+            SELECT u.id
+            FROM users u
+            WHERE u.hospital_id = %s
+               OR u.id IN (SELECT user_id FROM organization_memberships WHERE organization_id = %s)
+        """, (hosp_id, org_id)).fetchall()
+
+        # Delete memberships
+        conn.execute("DELETE FROM organization_memberships WHERE organization_id = %s", (org_id,))
+
+        # Delete organization
+        conn.execute("DELETE FROM healthcare_organizations WHERE id = %s", (org_id,))
+
+        # Delete hospital admin users who specifically belonged to this hospital
+        for hu in hosp_users:
+            h_uid = str(hu["id"])
+            other_roles = conn.execute("""
+                SELECT role FROM user_roles WHERE user_id = %s AND role NOT IN ('hospital_admin', 'organization')
+            """, (h_uid,)).fetchall()
+            if not other_roles:
+                conn.execute("UPDATE clinical_record_versions SET changed_by = NULL WHERE changed_by = %s", (h_uid,))
+                conn.execute("UPDATE clinical_records SET created_by = NULL WHERE created_by = %s", (h_uid,))
+                conn.execute("UPDATE medical_documents SET uploaded_by = NULL WHERE uploaded_by = %s", (h_uid,))
+                conn.execute("UPDATE document_versions SET uploaded_by = NULL WHERE uploaded_by = %s", (h_uid,))
+                conn.execute("UPDATE record_correction_requests SET requested_by = NULL WHERE requested_by = %s", (h_uid,))
+                conn.execute("UPDATE record_correction_requests SET reviewed_by = NULL WHERE reviewed_by = %s", (h_uid,))
+                conn.execute("UPDATE audit_events SET actor_user_id = NULL WHERE actor_user_id = %s", (h_uid,))
+                conn.execute("DELETE FROM user_roles WHERE user_id = %s", (h_uid,))
+                conn.execute("DELETE FROM users WHERE id = %s", (h_uid,))
+
+        record_audit(
+            actor_user_id=admin_user.id,
+            patient_id=None,
+            action="remove",
+            what=f"Admin removed registered organization {org['name']} ({hosp_id or org_id})",
+            actor_name=admin_user.full_name,
+            actor_role="admin",
+        )
+
+    logger.info("Admin removed organization %s (%s)", org_id, org["name"])
+    return {
+        "organizationId": f"org_{org_id}",
+        "name": org["name"],
+        "removed": True,
+        "message": f"Organization {org['name']} removed successfully."
+    }
+
+
+def remove_user(admin_user: AuthenticatedUser, user_id: str) -> Dict[str, Any]:
+    raw_uuid = _clean_user_id(user_id)
+    with get_db() as conn:
+        role_rows = conn.execute("SELECT role FROM user_roles WHERE user_id = %s", (raw_uuid,)).fetchall()
+        roles = [r["role"] for r in role_rows]
+
+    if "practitioner" in roles:
+        return remove_practitioner(admin_user, raw_uuid)
+    elif "hospital_admin" in roles or "organization" in roles:
+        return remove_organization(admin_user, raw_uuid)
+    elif "patient" in roles:
+        return remove_patient(admin_user, raw_uuid)
+    else:
+        return remove_patient(admin_user, raw_uuid)
+

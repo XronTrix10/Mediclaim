@@ -197,3 +197,36 @@ def get_practitioner_detail(
         "data": data,
         "meta": _make_meta(),
     }
+
+
+@router.delete("/organizations/{org_id}", status_code=status.HTTP_200_OK)
+def delete_organization_route(
+    org_id: str,
+    current_user: AuthenticatedUser = Depends(get_current_user),
+):
+    _require_admin_or_hospital(current_user)
+    from app.services.admin_service import remove_organization
+    res = remove_organization(current_user, org_id)
+    return {
+        "status": "success",
+        "message": res["message"],
+        "data": res,
+        "meta": _make_meta(),
+    }
+
+
+@router.delete("/practitioners/{practitioner_id}", status_code=status.HTTP_200_OK)
+def delete_practitioner_route(
+    practitioner_id: str,
+    current_user: AuthenticatedUser = Depends(get_current_user),
+):
+    _require_admin_or_hospital(current_user)
+    from app.services.admin_service import remove_practitioner
+    res = remove_practitioner(current_user, practitioner_id)
+    return {
+        "status": "success",
+        "message": res["message"],
+        "data": res,
+        "meta": _make_meta(),
+    }
+

@@ -192,9 +192,41 @@ def init_db() -> None:
 
         # Audit and corrections extensions
         conn.execute("ALTER TABLE audit_events DROP CONSTRAINT IF EXISTS audit_events_check;")
+        conn.execute("""
+            CREATE OR REPLACE FUNCTION prevent_audit_event_mutation()
+            RETURNS trigger AS $$
+            BEGIN
+                IF TG_OP = 'UPDATE' AND (NEW.actor_user_id IS NULL OR NEW.patient_id IS NULL) AND OLD.id = NEW.id AND OLD.action = NEW.action THEN
+                    RETURN NEW;
+                END IF;
+                RAISE EXCEPTION 'Audit history is immutable and cannot be updated or deleted.';
+            END;
+            $$ LANGUAGE plpgsql;
+        """)
         conn.execute("ALTER TABLE record_correction_requests ADD COLUMN IF NOT EXISTS record_title varchar(255);")
         conn.execute("ALTER TABLE record_correction_requests ADD COLUMN IF NOT EXISTS proposed_text text;")
         conn.execute("ALTER TABLE record_correction_requests ADD COLUMN IF NOT EXISTS review_notes text;")
+        conn.execute("ALTER TABLE record_correction_requests ALTER COLUMN requested_by DROP NOT NULL;")
+        conn.execute("ALTER TABLE record_correction_requests DROP CONSTRAINT IF EXISTS record_correction_requests_requested_by_fkey;")
+        conn.execute("ALTER TABLE record_correction_requests ADD CONSTRAINT record_correction_requests_requested_by_fkey FOREIGN KEY (requested_by) REFERENCES users(id) ON DELETE SET NULL;")
+        conn.execute("ALTER TABLE record_correction_requests DROP CONSTRAINT IF EXISTS record_correction_requests_reviewed_by_fkey;")
+        conn.execute("ALTER TABLE record_correction_requests ADD CONSTRAINT record_correction_requests_reviewed_by_fkey FOREIGN KEY (reviewed_by) REFERENCES users(id) ON DELETE SET NULL;")
+
+        # Allow user deletions without breaking foreign key history on clinical records and versions
+        conn.execute("ALTER TABLE clinical_record_versions ALTER COLUMN changed_by DROP NOT NULL;")
+        conn.execute("ALTER TABLE clinical_record_versions DROP CONSTRAINT IF EXISTS clinical_record_versions_changed_by_fkey;")
+        conn.execute("ALTER TABLE clinical_record_versions ADD CONSTRAINT clinical_record_versions_changed_by_fkey FOREIGN KEY (changed_by) REFERENCES users(id) ON DELETE SET NULL;")
+        conn.execute("ALTER TABLE clinical_records ALTER COLUMN created_by DROP NOT NULL;")
+        conn.execute("ALTER TABLE clinical_records DROP CONSTRAINT IF EXISTS clinical_records_created_by_fkey;")
+        conn.execute("ALTER TABLE clinical_records ADD CONSTRAINT clinical_records_created_by_fkey FOREIGN KEY (created_by) REFERENCES users(id) ON DELETE SET NULL;")
+        conn.execute("ALTER TABLE medical_documents ALTER COLUMN uploaded_by DROP NOT NULL;")
+        conn.execute("ALTER TABLE medical_documents DROP CONSTRAINT IF EXISTS medical_documents_uploaded_by_fkey;")
+        conn.execute("ALTER TABLE medical_documents ADD CONSTRAINT medical_documents_uploaded_by_fkey FOREIGN KEY (uploaded_by) REFERENCES users(id) ON DELETE SET NULL;")
+        conn.execute("ALTER TABLE document_versions ALTER COLUMN uploaded_by DROP NOT NULL;")
+        conn.execute("ALTER TABLE document_versions DROP CONSTRAINT IF EXISTS document_versions_uploaded_by_fkey;")
+        conn.execute("ALTER TABLE document_versions ADD CONSTRAINT document_versions_uploaded_by_fkey FOREIGN KEY (uploaded_by) REFERENCES users(id) ON DELETE SET NULL;")
+        conn.execute("ALTER TABLE vaccinations DROP CONSTRAINT IF EXISTS vaccinations_administered_by_fkey;")
+        conn.execute("ALTER TABLE vaccinations ADD CONSTRAINT vaccinations_administered_by_fkey FOREIGN KEY (administered_by) REFERENCES users(id) ON DELETE SET NULL;")
 
         # Caregivers table
         conn.execute("""

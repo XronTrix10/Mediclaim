@@ -9,6 +9,7 @@ import {
   getPatientVerificationDetail,
   approvePatientVerification,
   rejectPatientVerification,
+  removeUser,
 } from '../../api/admin'
 import type { PendingVerification, VerificationDetail } from '../../api/admin'
 
@@ -41,9 +42,10 @@ interface DetailModalProps {
   userId: string | null
   onClose: () => void
   onActionDone: () => void
+  onRemove?: () => void
 }
 
-function DetailModal({ open, userId, onClose, onActionDone }: DetailModalProps) {
+function DetailModal({ open, userId, onClose, onActionDone, onRemove }: DetailModalProps) {
   const [detail, setDetail] = useState<VerificationDetail | null>(null)
   const [loading, setLoading] = useState(false)
   const [approving, setApproving] = useState(false)
@@ -328,16 +330,23 @@ function DetailModal({ open, userId, onClose, onActionDone }: DetailModalProps) 
             </div>
           )}
 
-          {d.adminVerified && (
-            <div className="flex items-center justify-between border-t border-line pt-4">
-              <span className="text-sm text-ink-soft">
-                This account has been verified. No pending actions.
-              </span>
-              <button type="button" onClick={onClose} className={button('ghost', 'sm')}>
-                Close
-              </button>
-            </div>
-          )}
+          {/* Bottom Action Bar for Both Verified & Pending */}
+          <div className="flex items-center justify-between border-t border-line pt-4 mt-2">
+            <button
+              type="button"
+              onClick={() => {
+                onClose()
+                onRemove?.()
+              }}
+              className={button('danger', 'sm')}
+            >
+              <Icon name="trash" size={15} />
+              Remove Account
+            </button>
+            <button type="button" onClick={onClose} className={button('ghost', 'sm')}>
+              Close
+            </button>
+          </div>
         </div>
       )}
     </Modal>
@@ -352,6 +361,9 @@ export default function AdminVerifications() {
   const [debouncedSearch, setDebouncedSearch] = useState('')
   const [selectedId, setSelectedId] = useState<string | null>(null)
   const [modalOpen, setModalOpen] = useState(false)
+  const [removeTarget, setRemoveTarget] = useState<PendingVerification | null>(null)
+  const [removing, setRemoving] = useState(false)
+  const [removeErr, setRemoveErr] = useState<string | null>(null)
 
   // Debounce search input
   useEffect(() => {
@@ -377,6 +389,25 @@ export default function AdminVerifications() {
   const openDetail = (id: string) => {
     setSelectedId(id)
     setModalOpen(true)
+  }
+
+  const handleRemoveConfirm = async () => {
+    if (!removeTarget) return
+    setRemoving(true)
+    setRemoveErr(null)
+    try {
+      await removeUser(removeTarget.userId)
+      setRemoveTarget(null)
+      if (selectedId === removeTarget.userId) {
+        setModalOpen(false)
+        setSelectedId(null)
+      }
+      load()
+    } catch (err: any) {
+      setRemoveErr(err?.message || 'Failed to remove user account')
+    } finally {
+      setRemoving(false)
+    }
   }
 
   const TABS: { id: Tab; label: string }[] = [
@@ -469,16 +500,23 @@ export default function AdminVerifications() {
                     {item.phone} · Registered {formatWhen(item.registeredAt)}
                   </span>
                 </div>
-                <button
-                  type="button"
-                  onClick={(e) => {
-                    e.stopPropagation()
-                    openDetail(item.userId)
-                  }}
-                  className={button('soft', 'sm')}
-                >
-                  {item.adminVerified ? 'View Details' : 'Review'}
-                </button>
+                <div className="flex items-center gap-2" onClick={(e) => e.stopPropagation()}>
+                  <button
+                    type="button"
+                    onClick={() => setRemoveTarget(item)}
+                    className="p-1.5 text-ink-faint hover:text-allergy-ink hover:bg-allergy-tint/60 rounded-lg transition-colors cursor-pointer"
+                    title="Remove Account"
+                  >
+                    <Icon name="trash" size={16} />
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => openDetail(item.userId)}
+                    className={button('soft', 'sm')}
+                  >
+                    {item.adminVerified ? 'View Details' : 'Review'}
+                  </button>
+                </div>
               </div>
             ))}
           </div>
@@ -490,7 +528,59 @@ export default function AdminVerifications() {
         userId={selectedId}
         onClose={() => setModalOpen(false)}
         onActionDone={load}
+        onRemove={() => {
+          const match = items.find((it) => it.userId === selectedId)
+          if (match) setRemoveTarget(match)
+        }}
       />
+
+      {/* Confirmation Modal */}
+      <Modal
+        open={Boolean(removeTarget)}
+        title="Remove Registered Account"
+        icon="alert"
+        size="md"
+        onClose={() => !removing && setRemoveTarget(null)}
+      >
+        <div className="space-y-4">
+          <p className="text-sm text-ink-soft">
+            Are you sure you want to permanently remove <strong className="text-ink font-semibold">{removeTarget?.fullName}</strong>
+            {removeTarget?.doctorId
+              ? ` (${removeTarget.doctorId})`
+              : removeTarget?.hospitalId
+              ? ` (${removeTarget.hospitalId})`
+              : removeTarget?.mediclaimId
+              ? ` (${removeTarget.mediclaimId})`
+              : ''}?
+          </p>
+          <div className="rounded-[14px] bg-allergy-tint/50 border border-allergy/20 p-3 text-xs text-allergy-ink">
+            This action cannot be undone. The account and its associated credentials and records will be permanently removed.
+          </div>
+          {removeErr && (
+            <div className="rounded-[14px] bg-allergy-tint p-3 text-xs text-allergy-ink">
+              {removeErr}
+            </div>
+          )}
+          <div className="flex justify-end gap-2.5 pt-2">
+            <button
+              type="button"
+              disabled={removing}
+              onClick={() => setRemoveTarget(null)}
+              className={button('ghost', 'sm')}
+            >
+              Cancel
+            </button>
+            <button
+              type="button"
+              disabled={removing}
+              onClick={handleRemoveConfirm}
+              className={button('danger', 'sm')}
+            >
+              {removing ? 'Removing…' : 'Yes, Remove Account'}
+            </button>
+          </div>
+        </div>
+      </Modal>
     </div>
   )
 }

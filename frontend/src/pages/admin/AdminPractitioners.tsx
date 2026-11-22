@@ -5,6 +5,7 @@ import Icon from '../../components/Icon'
 import { button, card, emptyBox, input, select, label as labelCls, avatar } from '../../lib/ui'
 import { formatDate, initials } from '../../lib/format'
 import { getPractitioners, onboardPractitioner, getOrganizations, getPractitionerDetail } from '../../api/hospital'
+import { removePractitioner } from '../../api/admin'
 import type { PractitionerSummary, PractitionerCreateInput, OrganizationSummary } from '../../api/hospital'
 
 function SkeletonRow() {
@@ -190,9 +191,10 @@ interface PractitionerDetailModalProps {
   open: boolean
   practitionerId: string | null
   onClose: () => void
+  onRemove?: () => void
 }
 
-function PractitionerDetailModal({ open, practitionerId, onClose }: PractitionerDetailModalProps) {
+function PractitionerDetailModal({ open, practitionerId, onClose, onRemove }: PractitionerDetailModalProps) {
   const [practitioner, setPractitioner] = useState<PractitionerSummary | null>(null)
   const [loading, setLoading] = useState(false)
   const [err, setErr] = useState<string | null>(null)
@@ -235,6 +237,11 @@ function PractitionerDetailModal({ open, practitionerId, onClose }: Practitioner
                 <span className="rounded-full bg-[#e8f5e9] px-2.5 py-0.5 text-xs font-semibold text-[#2e7d32]">
                   Registered Practitioner
                 </span>
+                {p.doctorId && (
+                  <span className="font-mono text-xs text-brand font-semibold bg-brand-tint/60 px-2 py-0.5 rounded-md border border-brand/20">
+                    {p.doctorId}
+                  </span>
+                )}
                 {p.specialization && (
                   <span className="rounded-full bg-surface-tint px-2 py-0.5 text-xs font-medium text-ink-soft">
                     {p.specialization}
@@ -246,6 +253,14 @@ function PractitionerDetailModal({ open, practitionerId, onClose }: Practitioner
 
           {/* Details Grid */}
           <div className="grid gap-3 sm:grid-cols-2 text-sm">
+            {p.doctorId && (
+              <div>
+                <span className="block text-[0.78rem] font-semibold uppercase tracking-wide text-ink-faint mb-0.5">
+                  Doctor ID
+                </span>
+                <span className="font-mono text-brand font-semibold">{p.doctorId}</span>
+              </div>
+            )}
             <div>
               <span className="block text-[0.78rem] font-semibold uppercase tracking-wide text-ink-faint mb-0.5">
                 Registration / License No.
@@ -298,7 +313,18 @@ function PractitionerDetailModal({ open, practitionerId, onClose }: Practitioner
             )}
           </div>
 
-          <div className="flex justify-end border-t border-line pt-4">
+          <div className="flex items-center justify-between border-t border-line pt-4">
+            <button
+              type="button"
+              onClick={() => {
+                onClose()
+                onRemove?.()
+              }}
+              className={button('danger', 'sm')}
+            >
+              <Icon name="trash" size={15} />
+              Remove Doctor
+            </button>
             <button type="button" onClick={onClose} className={button('ghost', 'sm')}>
               Close
             </button>
@@ -319,6 +345,9 @@ export default function AdminPractitioners() {
   const [onboardOpen, setOnboardOpen] = useState(false)
   const [selectedPractitionerId, setSelectedPractitionerId] = useState<string | null>(null)
   const [detailOpen, setDetailOpen] = useState(false)
+  const [removeTarget, setRemoveTarget] = useState<PractitionerSummary | null>(null)
+  const [removing, setRemoving] = useState(false)
+  const [removeErr, setRemoveErr] = useState<string | null>(null)
   const [page, setPage] = useState(1)
   const limit = 20
 
@@ -352,6 +381,25 @@ export default function AdminPractitioners() {
   const openPractitionerDetail = (id: string) => {
     setSelectedPractitionerId(id)
     setDetailOpen(true)
+  }
+
+  const handleRemoveConfirm = async () => {
+    if (!removeTarget) return
+    setRemoving(true)
+    setRemoveErr(null)
+    try {
+      await removePractitioner(removeTarget.doctorId || removeTarget.id)
+      setRemoveTarget(null)
+      if (selectedPractitionerId === removeTarget.id) {
+        setDetailOpen(false)
+        setSelectedPractitionerId(null)
+      }
+      load()
+    } catch (err: any) {
+      setRemoveErr(err?.message || 'Failed to remove doctor')
+    } finally {
+      setRemoving(false)
+    }
   }
 
   return (
@@ -393,8 +441,9 @@ export default function AdminPractitioners() {
         ) : (
           <>
             {/* Desktop header */}
-            <div className="mb-2 hidden grid-cols-[2fr_1.5fr_1.5fr_2fr_1fr_auto] gap-4 px-3 text-[0.78rem] font-semibold uppercase tracking-wide text-ink-faint sm:grid">
+            <div className="mb-2 hidden grid-cols-[2fr_1.3fr_1.3fr_1.5fr_1.5fr_1fr_auto] gap-4 px-3 text-[0.78rem] font-semibold uppercase tracking-wide text-ink-faint sm:grid">
               <span>Practitioner</span>
+              <span>Doctor ID</span>
               <span>Reg. Number</span>
               <span>Specialization</span>
               <span>Organization</span>
@@ -406,20 +455,38 @@ export default function AdminPractitioners() {
                 <div
                   key={p.id}
                   onClick={() => openPractitionerDetail(p.id)}
-                  className="flex items-center gap-4 py-3.5 px-3 rounded-2xl cursor-pointer hover:bg-surface-tint/60 transition-colors sm:grid sm:grid-cols-[2fr_1.5fr_1.5fr_2fr_1fr_auto]"
+                  className="flex items-center gap-4 py-3.5 px-3 rounded-2xl cursor-pointer hover:bg-surface-tint/60 transition-colors sm:grid sm:grid-cols-[2fr_1.3fr_1.3fr_1.5fr_1.5fr_1fr_auto]"
                 >
                   <div className="flex items-center gap-3 min-w-0">
                     <span className={`${avatar} shrink-0`}>{initials(p.fullName)}</span>
                     <div className="min-w-0">
                       <strong className="block truncate text-[0.95rem] font-semibold text-ink">{p.fullName}</strong>
-                      <span className="block text-[0.78rem] text-ink-faint sm:hidden">{p.phone}</span>
+                      <div className="flex items-center gap-1.5 mt-0.5 sm:hidden">
+                        {p.doctorId && (
+                          <span className="font-mono text-[0.72rem] text-brand font-semibold bg-brand-tint/60 px-1.5 py-0.5 rounded border border-brand/20">
+                            {p.doctorId}
+                          </span>
+                        )}
+                        <span className="text-[0.78rem] text-ink-faint">{p.phone}</span>
+                      </div>
                     </div>
                   </div>
+                  <span className="hidden font-mono text-[0.88rem] font-semibold text-brand sm:block">
+                    {p.doctorId || '—'}
+                  </span>
                   <span className="hidden font-mono text-[0.85rem] text-ink-soft sm:block">{p.registrationNumber}</span>
                   <span className="hidden text-[0.88rem] text-ink-soft sm:block">{p.specialization ?? '—'}</span>
                   <span className="hidden text-[0.88rem] text-ink-soft sm:block">{p.organization?.name ?? '—'}</span>
                   <span className="hidden text-[0.82rem] text-ink-soft sm:block">{formatDate(p.createdAt)}</span>
-                  <div className="flex items-center justify-end">
+                  <div className="flex items-center justify-end gap-1" onClick={(e) => e.stopPropagation()}>
+                    <button
+                      type="button"
+                      onClick={() => setRemoveTarget(p)}
+                      className="p-1.5 text-ink-faint hover:text-allergy-ink hover:bg-allergy-tint/60 rounded-lg transition-colors cursor-pointer"
+                      title="Remove Doctor"
+                    >
+                      <Icon name="trash" size={16} />
+                    </button>
                     <Icon name="chevron-right" size={16} className="text-ink-faint hidden sm:block" />
                   </div>
                 </div>
@@ -464,7 +531,57 @@ export default function AdminPractitioners() {
         open={detailOpen}
         practitionerId={selectedPractitionerId}
         onClose={() => setDetailOpen(false)}
+        onRemove={() => {
+          const match = practitioners.find((p) => p.id === selectedPractitionerId)
+          if (match) setRemoveTarget(match)
+        }}
       />
+
+      {/* Confirmation Modal */}
+      <Modal
+        open={Boolean(removeTarget)}
+        title="Remove Doctor"
+        icon="alert"
+        size="md"
+        onClose={() => !removing && setRemoveTarget(null)}
+      >
+        <div className="space-y-4">
+          <p className="text-sm text-ink-soft">
+            Are you sure you want to remove <strong className="text-ink font-semibold">{removeTarget?.fullName}</strong>
+            {removeTarget?.doctorId
+              ? ` (${removeTarget.doctorId})`
+              : removeTarget?.registrationNumber
+              ? ` (Reg: ${removeTarget.registrationNumber})`
+              : ''}?
+          </p>
+          <div className="rounded-[14px] bg-allergy-tint/50 border border-allergy/20 p-3 text-xs text-allergy-ink">
+            This action cannot be undone. All clinical access grants and login credentials for this practitioner will be permanently revoked.
+          </div>
+          {removeErr && (
+            <div className="rounded-[14px] bg-allergy-tint p-3 text-xs text-allergy-ink">
+              {removeErr}
+            </div>
+          )}
+          <div className="flex justify-end gap-2.5 pt-2">
+            <button
+              type="button"
+              disabled={removing}
+              onClick={() => setRemoveTarget(null)}
+              className={button('ghost', 'sm')}
+            >
+              Cancel
+            </button>
+            <button
+              type="button"
+              disabled={removing}
+              onClick={handleRemoveConfirm}
+              className={button('danger', 'sm')}
+            >
+              {removing ? 'Removing…' : 'Yes, Remove Doctor'}
+            </button>
+          </div>
+        </div>
+      </Modal>
     </div>
   )
 }

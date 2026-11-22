@@ -9,6 +9,7 @@ import {
   registerOrganization,
   getOrganizationDetail,
 } from '../../api/hospital'
+import { removeOrganization } from '../../api/admin'
 import type { OrganizationSummary, OrganizationCreateInput } from '../../api/hospital'
 
 const ORG_TYPES = [
@@ -184,9 +185,10 @@ interface OrgDetailModalProps {
   open: boolean
   orgId: string | null
   onClose: () => void
+  onRemove?: () => void
 }
 
-function OrgDetailModal({ open, orgId, onClose }: OrgDetailModalProps) {
+function OrgDetailModal({ open, orgId, onClose, onRemove }: OrgDetailModalProps) {
   const [org, setOrg] = useState<OrganizationSummary | null>(null)
   const [loading, setLoading] = useState(false)
 
@@ -261,6 +263,22 @@ function OrgDetailModal({ open, orgId, onClose }: OrgDetailModalProps) {
               </div>
             </div>
           )}
+          <div className="flex items-center justify-between border-t border-line pt-4">
+            <button
+              type="button"
+              onClick={() => {
+                onClose()
+                onRemove?.()
+              }}
+              className={button('danger', 'sm')}
+            >
+              <Icon name="trash" size={15} />
+              Remove Organization
+            </button>
+            <button type="button" onClick={onClose} className={button('ghost', 'sm')}>
+              Close
+            </button>
+          </div>
         </div>
       )}
     </Modal>
@@ -276,6 +294,9 @@ export default function AdminOrganizations() {
   const [registerOpen, setRegisterOpen] = useState(false)
   const [detailOrgId, setDetailOrgId] = useState<string | null>(null)
   const [detailOpen, setDetailOpen] = useState(false)
+  const [removeTarget, setRemoveTarget] = useState<OrganizationSummary | null>(null)
+  const [removing, setRemoving] = useState(false)
+  const [removeErr, setRemoveErr] = useState<string | null>(null)
 
   useEffect(() => {
     const t = setTimeout(() => setDebouncedSearch(search), 400)
@@ -294,6 +315,25 @@ export default function AdminOrganizations() {
   }, [debouncedSearch])
 
   useEffect(() => { load() }, [load])
+
+  const handleRemoveConfirm = async () => {
+    if (!removeTarget) return
+    setRemoving(true)
+    setRemoveErr(null)
+    try {
+      await removeOrganization(removeTarget.publicId || removeTarget.id)
+      setRemoveTarget(null)
+      if (detailOrgId === removeTarget.publicId || detailOrgId === removeTarget.id) {
+        setDetailOpen(false)
+        setDetailOrgId(null)
+      }
+      load()
+    } catch (err: any) {
+      setRemoveErr(err?.message || 'Failed to remove organization')
+    } finally {
+      setRemoving(false)
+    }
+  }
 
   return (
     <div>
@@ -333,29 +373,41 @@ export default function AdminOrganizations() {
       ) : (
         <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-3">
           {orgs.map((org) => (
-            <button
+            <div
               key={org.id}
-              type="button"
               onClick={() => { setDetailOrgId(org.publicId); setDetailOpen(true) }}
-              className="text-left rounded-[20px] border border-line bg-white p-5 shadow-soft transition-shadow hover:shadow-md"
+              className="text-left rounded-[20px] border border-line bg-white p-5 shadow-soft transition-all hover:shadow-md cursor-pointer flex flex-col justify-between"
             >
               <div className="mb-3 flex items-start justify-between gap-2">
-                <div>
-                  <span className="block font-semibold text-ink">{org.name}</span>
+                <div className="min-w-0 pr-1">
+                  <span className="block font-semibold text-ink truncate">{org.name}</span>
                   {org.registrationNumber && (
-                    <span className="block text-[0.78rem] text-ink-faint">{org.registrationNumber}</span>
+                    <span className="block text-[0.78rem] text-ink-faint truncate">{org.registrationNumber}</span>
                   )}
                 </div>
-                {typeBadge(org.organizationType)}
+                <div className="flex items-center gap-1.5 shrink-0">
+                  {typeBadge(org.organizationType)}
+                  <button
+                    type="button"
+                    onClick={(e) => {
+                      e.stopPropagation()
+                      setRemoveTarget(org)
+                    }}
+                    className="p-1 text-ink-faint hover:text-allergy-ink hover:bg-allergy-tint/60 rounded-md transition-colors"
+                    title="Remove Organization"
+                  >
+                    <Icon name="trash" size={15} />
+                  </button>
+                </div>
               </div>
-              <div className="mt-auto flex items-center justify-between gap-2 text-[0.82rem] text-ink-soft">
+              <div className="mt-auto flex items-center justify-between gap-2 text-[0.82rem] text-ink-soft pt-2 border-t border-line/60">
                 <span className="flex items-center gap-1.5">
                   <Icon name="user" size={14} />
                   {org.practitionersCount} practitioner{org.practitionersCount !== 1 ? 's' : ''}
                 </span>
                 <span>{formatDate(org.createdAt)}</span>
               </div>
-            </button>
+            </div>
           ))}
         </div>
       )}
@@ -369,7 +421,53 @@ export default function AdminOrganizations() {
         open={detailOpen}
         orgId={detailOrgId}
         onClose={() => setDetailOpen(false)}
+        onRemove={() => {
+          const match = orgs.find((o) => o.publicId === detailOrgId || o.id === detailOrgId)
+          if (match) setRemoveTarget(match)
+        }}
       />
+
+      {/* Confirmation Modal */}
+      <Modal
+        open={Boolean(removeTarget)}
+        title="Remove Organization"
+        icon="alert"
+        size="md"
+        onClose={() => !removing && setRemoveTarget(null)}
+      >
+        <div className="space-y-4">
+          <p className="text-sm text-ink-soft">
+            Are you sure you want to permanently remove <strong className="text-ink font-semibold">{removeTarget?.name}</strong>
+            {removeTarget?.registrationNumber ? ` (${removeTarget.registrationNumber})` : ''}?
+          </p>
+          <div className="rounded-[14px] bg-allergy-tint/50 border border-allergy/20 p-3 text-xs text-allergy-ink">
+            This action cannot be undone. All organization records, memberships, and hospital administrator accounts for this organization will be removed.
+          </div>
+          {removeErr && (
+            <div className="rounded-[14px] bg-allergy-tint p-3 text-xs text-allergy-ink">
+              {removeErr}
+            </div>
+          )}
+          <div className="flex justify-end gap-2.5 pt-2">
+            <button
+              type="button"
+              disabled={removing}
+              onClick={() => setRemoveTarget(null)}
+              className={button('ghost', 'sm')}
+            >
+              Cancel
+            </button>
+            <button
+              type="button"
+              disabled={removing}
+              onClick={handleRemoveConfirm}
+              className={button('danger', 'sm')}
+            >
+              {removing ? 'Removing…' : 'Yes, Remove Organization'}
+            </button>
+          </div>
+        </div>
+      </Modal>
     </div>
   )
 }
