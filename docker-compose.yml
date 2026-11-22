@@ -30,6 +30,8 @@ services:
     restart: unless-stopped
     ports:
       - "${BACKEND_PORT:-8000}:8000"
+    env_file:
+      - ./backend/.env
     environment:
       JWT_SECRET: ${JWT_SECRET:-mediclaim_dev_jwt_secret_change_in_production}
       OTP_DEBUG: ${OTP_DEBUG:-true}
