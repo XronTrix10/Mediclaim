@@ -38,8 +38,10 @@ CREATE TABLE patient_profiles (
     date_of_birth date NOT NULL,
     blood_group varchar(5),
     gender varchar(30),
+    address text,
     emergency_contact_name varchar(200),
     emergency_contact_phone varchar(20),
+    emergency_contact_relation varchar(50),
     created_at timestamp NOT NULL DEFAULT now(),
     updated_at timestamp NOT NULL DEFAULT now()
 );
@@ -111,7 +113,10 @@ CREATE TABLE clinical_records (
     created_by uuid NOT NULL REFERENCES users(id),
     record_type varchar(50) NOT NULL,
     title varchar(255) NOT NULL,
-    status varchar(30) NOT NULL CHECK (status IN ('draft', 'active', 'archived', 'deleted')),
+    status varchar(30) NOT NULL CHECK (status IN ('draft', 'active', 'resolved', 'inactive', 'completed', 'discontinued', 'archived', 'deleted')),
+    source varchar(30) DEFAULT 'self_reported',
+    provider varchar(255),
+    document_id uuid,
     description text,
     recorded_at timestamp NOT NULL,
     created_at timestamp NOT NULL DEFAULT now(),
@@ -149,8 +154,10 @@ CREATE TABLE allergies (
     patient_id uuid NOT NULL REFERENCES patient_profiles(id),
     clinical_record_id uuid NOT NULL REFERENCES clinical_records(id),
     allergen varchar(255) NOT NULL,
+    category varchar(50),
     reaction text,
     severity varchar(30),
+    criticality varchar(30),
     status varchar(30) NOT NULL,
     identified_date date,
     notes text,
@@ -165,12 +172,19 @@ CREATE TABLE prescriptions (
     public_id varchar(12) NOT NULL UNIQUE CHECK (public_id ~ '^[A-Za-z0-9]{12}$'),
     patient_id uuid NOT NULL REFERENCES patient_profiles(id),
     encounter_id uuid REFERENCES encounters(id),
-    practitioner_id uuid NOT NULL REFERENCES practitioner_profiles(id),
+    practitioner_id uuid REFERENCES practitioner_profiles(id),
     organization_id uuid REFERENCES healthcare_organizations(id),
+    title varchar(255),
+    doctor_name varchar(255),
+    organization_name varchar(255),
     prescribed_at timestamp NOT NULL,
     valid_until date,
     status varchar(30) NOT NULL CHECK (status IN ('draft', 'active', 'completed', 'cancelled', 'expired')),
     instructions text,
+    file_type varchar(50),
+    file_name varchar(255),
+    file_size_bytes bigint,
+    file_url text,
     created_at timestamp NOT NULL DEFAULT now(),
     deleted_at timestamp,
     CHECK (valid_until IS NULL OR valid_until >= prescribed_at::date),
@@ -321,10 +335,22 @@ CREATE TABLE medical_documents (
     file_size_bytes bigint CHECK (file_size_bytes >= 0),
     document_date date,
     checksum varchar(128),
+    ocr_status varchar(30) NOT NULL DEFAULT 'pending',
+    extracted_text text,
+    extracted_payload jsonb,
+    parse_confidence real,
+    parser_provider varchar(50),
+    parse_error text,
+    parsed_at timestamp,
+    confirmed_at timestamp,
     created_at timestamp NOT NULL DEFAULT now(),
     deleted_at timestamp,
     FOREIGN KEY (patient_id, clinical_record_id) REFERENCES clinical_records (patient_id, id)
 );
+
+ALTER TABLE clinical_records 
+ADD CONSTRAINT fk_clinical_records_document_id 
+FOREIGN KEY (document_id) REFERENCES medical_documents(id) ON DELETE SET NULL;
 
 CREATE TABLE document_versions (
     id uuid PRIMARY KEY DEFAULT gen_random_uuid(),
@@ -365,17 +391,20 @@ CREATE TABLE patient_access_grants (
     consent_record_id uuid REFERENCES consent_records(id) ON DELETE SET NULL,
     grantee_user_id uuid REFERENCES users(id),
     organization_id uuid REFERENCES healthcare_organizations(id),
+    grantee_name varchar(255),
+    grantee_role varchar(255),
+    duration_hours integer,
     granted_by uuid NOT NULL REFERENCES users(id),
     purpose text,
-    valid_from timestamp NOT NULL,
+    valid_from timestamp,
     expires_at timestamp,
     revoked_at timestamp,
     status varchar(30) NOT NULL CHECK (status IN ('active', 'revoked', 'expired', 'pending')),
     created_at timestamp NOT NULL DEFAULT now(),
     deleted_at timestamp,
-    CHECK ((grantee_user_id IS NOT NULL) <> (organization_id IS NOT NULL)),
-    CHECK (expires_at IS NULL OR expires_at >= valid_from),
-    CHECK (revoked_at IS NULL OR revoked_at >= valid_from),
+    CHECK (grantee_user_id IS NOT NULL OR organization_id IS NOT NULL OR grantee_name IS NOT NULL),
+    CHECK (expires_at IS NULL OR valid_from IS NULL OR expires_at >= valid_from),
+    CHECK (revoked_at IS NULL OR valid_from IS NULL OR revoked_at >= valid_from),
     FOREIGN KEY (patient_id, consent_record_id) REFERENCES consent_records (patient_id, id)
 );
 
@@ -385,6 +414,17 @@ CREATE TABLE access_grant_scopes (
     record_type varchar(50) NOT NULL,
     permission varchar(30) NOT NULL,
     UNIQUE (access_grant_id, record_type, permission)
+);
+
+CREATE TABLE patient_caregivers (
+    id uuid PRIMARY KEY DEFAULT gen_random_uuid(),
+    patient_id uuid NOT NULL REFERENCES patient_profiles(id) ON DELETE CASCADE,
+    name varchar(200) NOT NULL,
+    relation varchar(100) NOT NULL,
+    scope text[] NOT NULL,
+    since date NOT NULL DEFAULT CURRENT_DATE,
+    created_at timestamp NOT NULL DEFAULT now(),
+    deleted_at timestamp
 );
 
 CREATE TABLE audit_events (
@@ -399,7 +439,6 @@ CREATE TABLE audit_events (
     user_agent text,
     occurred_at timestamp NOT NULL DEFAULT now(),
     metadata jsonb,
-    CHECK ((patient_id IS NULL AND clinical_record_id IS NULL) OR (patient_id IS NOT NULL AND clinical_record_id IS NOT NULL)),
     CHECK (resource_id IS NULL OR resource_table IS NOT NULL),
     FOREIGN KEY (patient_id, clinical_record_id) REFERENCES clinical_records (patient_id, id)
 );
@@ -419,11 +458,14 @@ CREATE TABLE record_correction_requests (
     id uuid PRIMARY KEY DEFAULT gen_random_uuid(),
     patient_id uuid NOT NULL REFERENCES patient_profiles(id),
     clinical_record_id uuid NOT NULL REFERENCES clinical_records(id),
+    record_title varchar(255),
     requested_by uuid NOT NULL REFERENCES users(id),
     reason text,
+    proposed_text text,
     proposed_correction jsonb,
     status varchar(30) NOT NULL CHECK (status IN ('open', 'under_review', 'approved', 'rejected')),
     reviewed_by uuid REFERENCES users(id),
+    review_notes text,
     reviewed_at timestamp,
     created_at timestamp NOT NULL DEFAULT now(),
     CHECK (reviewed_at IS NULL OR reviewed_at >= created_at),
@@ -452,6 +494,7 @@ CREATE INDEX idx_consent_records_patient_status ON consent_records (patient_id, 
 CREATE INDEX idx_audit_events_patient_occurred_at ON audit_events (patient_id, occurred_at);
 CREATE INDEX idx_audit_events_actor_occurred_at ON audit_events (actor_user_id, occurred_at);
 CREATE INDEX idx_record_correction_requests_patient ON record_correction_requests (patient_id);
+CREATE INDEX idx_patient_caregivers_patient_id ON patient_caregivers (patient_id);
 
 CREATE UNIQUE INDEX ux_consent_records_patient_granted_to_user
 ON consent_records (patient_id, granted_to_user_id)

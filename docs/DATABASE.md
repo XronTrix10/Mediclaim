@@ -2,7 +2,7 @@
 
 **Database Engine**: PostgreSQL 16+  
 **Extensions**: `pgcrypto` (UUID generation and cryptographic primitives)  
-**Schema File**: [`infra/db/001_schema.sql`](file:///Users/sreejan/Codes/Mediclaim/infra/db/001_schema.sql)  
+**Schema Files**: [`infra/db/001_schema.sql`](file:///c:/Users/navya/Desktop/Mediclaim/infra/db/001_schema.sql) (canonical baseline schema), [`infra/db/002_runtime_alignment.sql`](file:///c:/Users/navya/Desktop/Mediclaim/infra/db/002_runtime_alignment.sql) (runtime alignment migration)  
 **Interactive Visualizer Format**: DBML (dbdiagram.io compatible)
 
 ---
@@ -22,6 +22,7 @@
 4. [Indexes & Performance Optimizations](#4-indexes--performance-optimizations)
 5. [Database Security & Immutability Triggers](#5-database-security--immutability-triggers)
 6. [Complete DBML Specification (for dbdiagram.io)](#6-complete-dbml-specification-for-dbdiagramio)
+7. [Database Testing & Validation Suite](#7-database-testing--validation-suite)
 
 ---
 
@@ -211,7 +212,7 @@ Allergies and adverse intolerances.
 
 #### `prescriptions`
 Prescriptions written by practitioners or digitized from patient uploads.
-- **Fields**: `id`, `public_id`, `patient_id`, `encounter_id`, `practitioner_id`, `organization_id`, `title`, `doctor_name`, `organization_name`, `prescribed_at`, `valid_until`, `status` (`draft`, `active`, `completed`, `cancelled`, `expired`), `instructions`, `file_type`, `file_name`, `file_size_bytes`, `file_url`.
+- **Fields**: `id`, `public_id`, `patient_id`, `encounter_id`, `practitioner_id` (nullable for self-reported or patient uploads), `organization_id`, `title`, `doctor_name`, `organization_name`, `prescribed_at`, `valid_until`, `status` (`draft`, `active`, `completed`, `cancelled`, `expired`), `instructions`, `file_type`, `file_name`, `file_size_bytes`, `file_url`.
 
 #### `prescription_items`
 Individual pharmaceuticals, dosages, and refill counts on a prescription.
@@ -271,16 +272,19 @@ Registry of physical files uploaded to the platform with Multimodal AI OCR statu
 ### 3.6 Patient Consent, Granular Access Grants & Caregivers
 
 #### `patient_access_grants`
-Time-bounded clinical authorizations granted to doctors or hospitals.
+Time-bounded clinical authorizations granted to doctors, hospitals, or named practitioners. Supports three grant authorization paradigms:
+1. **User-based grants**: Linked to a registered system user (`grantee_user_id IS NOT NULL`).
+2. **Organization-based grants**: Scoped to an entire healthcare provider facility (`organization_id IS NOT NULL`).
+3. **Direct named grants**: Authorized directly by the patient specifying provider name and role (`grantee_name IS NOT NULL`), enabling flexible ad-hoc consultations.
 
 | Column | Type | Constraints | Description |
 |---|---|---|---|
 | `id` | `uuid` | `PRIMARY KEY, DEFAULT gen_random_uuid()` | Grant UUID |
 | `patient_id` | `uuid` | `NOT NULL, REFERENCES patient_profiles(id)` | Grantor patient |
 | `consent_record_id` | `uuid` | `REFERENCES consent_records(id) ON DELETE SET NULL` | Parent consent contract |
-| `grantee_user_id` | `uuid` | `REFERENCES users(id)` | Doctor user ID |
-| `organization_id` | `uuid` | `REFERENCES healthcare_organizations(id)` | Hospital ID |
-| `grantee_name` | `varchar(255)` | `NULLABLE` | Doctor or organization display name |
+| `grantee_user_id` | `uuid` | `REFERENCES users(id)` | Doctor user ID (user-based grants) |
+| `organization_id` | `uuid` | `REFERENCES healthcare_organizations(id)` | Hospital ID (organization grants) |
+| `grantee_name` | `varchar(255)` | `NULLABLE` | Doctor or organization display name (named grants) |
 | `grantee_role` | `varchar(255)` | `NULLABLE` | Clinical specialty |
 | `duration_hours` | `integer` | `NULLABLE` | Requested session duration |
 | `granted_by` | `uuid` | `NOT NULL, REFERENCES users(id)` | Authorizing user |
@@ -290,6 +294,7 @@ Time-bounded clinical authorizations granted to doctors or hospitals.
 | `revoked_at` | `timestamp` | `NULLABLE` | Explicit revocation timestamp |
 | `status` | `varchar(30)` | `NOT NULL CHECK (status IN ('active', 'revoked', 'expired', 'pending'))` | Real-time grant status |
 | `created_at` | `timestamp` | `NOT NULL, DEFAULT now()` | Timestamp |
+| **Grant Check** | — | `CHECK (grantee_user_id IS NOT NULL OR organization_id IS NOT NULL OR grantee_name IS NOT NULL)` | Enforces at least one valid recipient identity |
 
 #### `access_grant_scopes`
 Granular clinical category scopes attached to an access grant.
@@ -321,16 +326,17 @@ Family and caregiver delegations.
 
 #### `audit_events`
 Tamper-evident log of all accesses, downloads, modifications, and emergency break-glass sessions.
+Enforces immutable audit trails via database triggers and validates entity references (`CHECK (resource_id IS NULL OR resource_table IS NOT NULL)`). The incompatible pairing constraint requiring both `patient_id` and `clinical_record_id` to be mutually present/absent was removed to support patient-scoped and system audit events.
 
 | Column | Type | Constraints | Description |
 |---|---|---|---|
 | `id` | `uuid` | `PRIMARY KEY, DEFAULT gen_random_uuid()` | Audit log UUID |
 | `actor_user_id` | `uuid` | `REFERENCES users(id) ON DELETE SET NULL` | Performing user |
 | `patient_id` | `uuid` | `REFERENCES patient_profiles(id) ON DELETE SET NULL` | Subject patient |
-| `clinical_record_id` | `uuid` | `REFERENCES clinical_records(id) ON DELETE RESTRICT` | Specific record accessed |
+| `clinical_record_id` | `uuid` | `REFERENCES clinical_records(id) ON DELETE RESTRICT` | Specific record accessed (nullable for patient/system events) |
 | `action` | `varchar(100)` | `NOT NULL` | Action code (`view`, `upload`, `grant`, `revoke`, `emergency_break_glass`) |
-| `resource_type` | `varchar(100)` | `NULLABLE` | Entity type |
-| `resource_id` | `uuid` | `NULLABLE` | Entity ID |
+| `resource_table` | `varchar(100)` | `NULLABLE` | Target table name (e.g. `clinical_records`, `patient_profiles`) |
+| `resource_id` | `uuid` | `NULLABLE` | Target entity UUID |
 | `ip_address` | `varchar(45)` | `NULLABLE` | Client IPv4/IPv6 address |
 | `user_agent` | `text` | `NULLABLE` | Client user agent string |
 | `occurred_at` | `timestamp` | `NOT NULL, DEFAULT now()` | UTC event timestamp |
@@ -529,7 +535,7 @@ Table clinical_records {
   created_by uuid [not null]
   record_type varchar(50) [not null, note: 'condition | allergy | medication | vaccination | report']
   title varchar(255) [not null]
-  status varchar(30) [not null, note: 'draft | active | resolved | completed | archived']
+  status varchar(30) [not null, note: 'draft | active | resolved | inactive | completed | discontinued | archived | deleted']
   source varchar(30) [default: 'self_reported', note: 'self_reported | uploaded | practitioner']
   provider varchar(255)
   document_id uuid
@@ -847,14 +853,18 @@ Table patient_caregivers {
   since date [not null, default: `CURRENT_DATE`]
   created_at timestamp [not null, default: `now()`]
   deleted_at timestamp
+  indexes {
+    (patient_id) [name: 'idx_patient_caregivers_patient_id']
+  }
 }
 
 Table audit_events {
   id uuid [pk, default: `gen_random_uuid()`]
   actor_user_id uuid
   patient_id uuid
+  clinical_record_id uuid
   action varchar(100) [not null, note: 'view | upload | grant | revoke | emergency_break_glass']
-  resource_type varchar(100)
+  resource_table varchar(100)
   resource_id uuid
   ip_address varchar(45)
   user_agent text
@@ -961,6 +971,7 @@ Ref: consent_records.organization_id > healthcare_organizations.id
 Ref: patient_caregivers.patient_id > patient_profiles.id [delete: cascade]
 Ref: audit_events.actor_user_id > users.id [delete: set null]
 Ref: audit_events.patient_id > patient_profiles.id [delete: set null]
+Ref: audit_events.clinical_record_id > clinical_records.id
 Ref: clinical_record_versions.clinical_record_id > clinical_records.id
 Ref: clinical_record_versions.changed_by > users.id
 Ref: record_correction_requests.patient_id > patient_profiles.id
@@ -968,3 +979,56 @@ Ref: record_correction_requests.clinical_record_id > clinical_records.id
 Ref: record_correction_requests.requested_by > users.id
 Ref: record_correction_requests.reviewed_by > users.id
 ```
+
+---
+
+## 7. Database Testing & Validation Suite
+
+Mediclaim includes an automated validation suite to test fresh database creation, migration execution, and runtime schema consistency.
+
+### 7.1 Running SQL Assertions
+
+To run the automated PL/pgSQL assertion suite against the active database:
+
+```bash
+# Using local psql
+psql -U mediclaim -d mediclaim -v ON_ERROR_STOP=1 -f infra/db/test_schema.sql
+
+# Using Docker Compose
+docker exec -w / -i mediclaim-postgres psql -U mediclaim -d mediclaim -v ON_ERROR_STOP=1 < infra/db/test_schema.sql
+```
+
+The assertions verify:
+1. Presence of all 28 canonical tables.
+2. Presence and types of all runtime alignment columns (`patient_profiles`, `clinical_records`, `allergies`, `prescriptions`, `medical_documents`, `patient_access_grants`, `record_correction_requests`, `patient_caregivers`).
+3. Nullability of `prescriptions.practitioner_id` and `patient_access_grants.valid_from`.
+4. Clinical record status constraint coverage across all 8 supported lifecycle statuses (`draft`, `active`, `resolved`, `inactive`, `completed`, `discontinued`, `archived`, `deleted`).
+5. Support for user-based, organization-based, and direct named access grants in `patient_access_grants`.
+6. Successful removal of the incompatible `audit_events_check` constraint while retaining immutable triggers and entity reference checks.
+7. Functional verification of direct named grant creation and immutable audit event enforcement.
+
+### 7.2 Running the Python Validation Suite
+
+```bash
+# Run schema and constraint validation
+python scripts/validate_db.py
+
+# Run SQL assertion script through the Python runner
+python scripts/validate_db.py --test-schema-sql
+```
+
+### 7.3 Running the Full Fresh & Migration Consistency Runner
+
+To test fresh database creation, migration execution from baseline, idempotency, and schema consistency in one automated script:
+
+```bash
+bash scripts/validate_db.sh
+```
+
+### 7.4 Running Backend Unit Tests
+
+```bash
+# Run database schema unit tests
+python -m unittest backend/tests/test_database_schema.py
+```
+
