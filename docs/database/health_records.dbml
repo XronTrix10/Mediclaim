@@ -108,7 +108,7 @@ Table clinical_records {
   created_by uuid [not null]
   record_type varchar(50) [not null, note: 'condition | allergy | medication | vaccination | report']
   title varchar(255) [not null]
-  status varchar(30) [not null, note: 'draft | active | resolved | completed | archived']
+  status varchar(30) [not null, note: 'draft | active | resolved | inactive | completed | discontinued | archived | deleted']
   source varchar(30) [default: 'self_reported', note: 'self_reported | uploaded | practitioner']
   provider varchar(255)
   document_id uuid
@@ -426,14 +426,18 @@ Table patient_caregivers {
   since date [not null, default: `CURRENT_DATE`]
   created_at timestamp [not null, default: `now()`]
   deleted_at timestamp
+  indexes {
+    (patient_id) [name: 'idx_patient_caregivers_patient_id']
+  }
 }
 
 Table audit_events {
   id uuid [pk, default: `gen_random_uuid()`]
   actor_user_id uuid
   patient_id uuid
+  clinical_record_id uuid
   action varchar(100) [not null, note: 'view | upload | grant | revoke | emergency_break_glass']
-  resource_type varchar(100)
+  resource_table varchar(100)
   resource_id uuid
   ip_address varchar(45)
   user_agent text
@@ -540,6 +544,7 @@ Ref: consent_records.organization_id > healthcare_organizations.id
 Ref: patient_caregivers.patient_id > patient_profiles.id [delete: cascade]
 Ref: audit_events.actor_user_id > users.id [delete: set null]
 Ref: audit_events.patient_id > patient_profiles.id [delete: set null]
+Ref: audit_events.clinical_record_id > clinical_records.id
 Ref: clinical_record_versions.clinical_record_id > clinical_records.id
 Ref: clinical_record_versions.changed_by > users.id
 Ref: record_correction_requests.patient_id > patient_profiles.id
