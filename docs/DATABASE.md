@@ -22,6 +22,7 @@
 4. [Indexes & Performance Optimizations](#4-indexes--performance-optimizations)
 5. [Database Security & Immutability Triggers](#5-database-security--immutability-triggers)
 6. [Complete DBML Specification (for dbdiagram.io)](#6-complete-dbml-specification-for-dbdiagramio)
+7. [Database Testing & Validation Suite](#7-database-testing--validation-suite)
 
 ---
 
@@ -978,3 +979,56 @@ Ref: record_correction_requests.clinical_record_id > clinical_records.id
 Ref: record_correction_requests.requested_by > users.id
 Ref: record_correction_requests.reviewed_by > users.id
 ```
+
+---
+
+## 7. Database Testing & Validation Suite
+
+Mediclaim includes an automated validation suite to test fresh database creation, migration execution, and runtime schema consistency.
+
+### 7.1 Running SQL Assertions
+
+To run the automated PL/pgSQL assertion suite against the active database:
+
+```bash
+# Using local psql
+psql -U mediclaim -d mediclaim -v ON_ERROR_STOP=1 -f infra/db/test_schema.sql
+
+# Using Docker Compose
+docker exec -w / -i mediclaim-postgres psql -U mediclaim -d mediclaim -v ON_ERROR_STOP=1 < infra/db/test_schema.sql
+```
+
+The assertions verify:
+1. Presence of all 28 canonical tables.
+2. Presence and types of all runtime alignment columns (`patient_profiles`, `clinical_records`, `allergies`, `prescriptions`, `medical_documents`, `patient_access_grants`, `record_correction_requests`, `patient_caregivers`).
+3. Nullability of `prescriptions.practitioner_id` and `patient_access_grants.valid_from`.
+4. Clinical record status constraint coverage across all 8 supported lifecycle statuses (`draft`, `active`, `resolved`, `inactive`, `completed`, `discontinued`, `archived`, `deleted`).
+5. Support for user-based, organization-based, and direct named access grants in `patient_access_grants`.
+6. Successful removal of the incompatible `audit_events_check` constraint while retaining immutable triggers and entity reference checks.
+7. Functional verification of direct named grant creation and immutable audit event enforcement.
+
+### 7.2 Running the Python Validation Suite
+
+```bash
+# Run schema and constraint validation
+python scripts/validate_db.py
+
+# Run SQL assertion script through the Python runner
+python scripts/validate_db.py --test-schema-sql
+```
+
+### 7.3 Running the Full Fresh & Migration Consistency Runner
+
+To test fresh database creation, migration execution from baseline, idempotency, and schema consistency in one automated script:
+
+```bash
+bash scripts/validate_db.sh
+```
+
+### 7.4 Running Backend Unit Tests
+
+```bash
+# Run database schema unit tests
+python -m unittest backend/tests/test_database_schema.py
+```
+
