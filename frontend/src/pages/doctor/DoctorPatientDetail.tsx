@@ -21,6 +21,16 @@ function formatBytes(bytes?: number) {
   return `${(bytes / (1024 * 1024)).toFixed(1)} MB`
 }
 
+export function isBirthCertificate(title?: string, fileName?: string, docType?: string): boolean {
+  const t = (title || '').toLowerCase().trim()
+  const fn = (fileName || '').toLowerCase().trim()
+  const dt = (docType || '').toLowerCase().trim()
+  if (dt.includes('birth') && (dt.includes('cert') || dt.includes('record') || dt === 'birth')) return true
+  if (t.includes('birth') && (t.includes('cert') || t.includes('record') || t === 'birth')) return true
+  if (fn.includes('birth') && (fn.includes('cert') || fn.includes('certificate'))) return true
+  return false
+}
+
 type RecordKind = 'all' | 'documents' | 'vaccination' | 'condition' | 'medication' | 'allergy' | 'report'
 
 const KIND_LABELS: Record<string, string> = {
@@ -73,15 +83,16 @@ function RecordChip({ kind, selected, count, onClick }: { kind: RecordKind; sele
 
 function RecordRow({ event, onPreview }: { event: HealthEvent; onPreview: (item: PreviewItem) => void }) {
   const iconName = (KIND_ICON[event.kind] ?? 'file') as any
-  const hasDoc = !!event.fileUrl
+  const isBirth = isBirthCertificate(event.title, event.fileName, event.kind)
+  const hasDoc = !!event.fileUrl && !isBirth
 
   return (
     <li
       onClick={() => onPreview({
         title: event.title,
-        fileName: event.fileName,
-        fileUrl: event.fileUrl,
-        fileType: event.fileType,
+        fileName: isBirth ? undefined : event.fileName,
+        fileUrl: isBirth ? undefined : event.fileUrl,
+        fileType: isBirth ? undefined : event.fileType,
         date: event.date,
         provider: event.provider,
         detail: event.detail,
@@ -225,10 +236,30 @@ export default function DoctorPatientDetail() {
 
   useEffect(() => { load() }, [mediclaimId])
 
-  const records = data?.records ?? []
-  const documents = data?.documents ?? []
-  const recordsWithDocs = records.filter((r) => r.fileUrl)
-  const totalDocsCount = documents.length + recordsWithDocs.filter((r) => !documents.some((d) => d.fileUrl === r.fileUrl)).length
+  const approvedScopes = (data?.approvedScopes ?? []).map((s) => s.toLowerCase())
+  const hasDocumentScope = approvedScopes.includes('all') || approvedScopes.includes('document') || approvedScopes.includes('documents')
+
+  // Enforce document scope and filter out birth certificates
+  const rawDocuments = data?.documents ?? []
+  const safeDocuments = rawDocuments.filter((d) => !isBirthCertificate(d.title, d.fileName, d.documentType))
+  const documents = hasDocumentScope ? safeDocuments : []
+
+  const rawRecords = data?.records ?? []
+  const records = rawRecords.map((r) => {
+    if (!hasDocumentScope || isBirthCertificate(r.title, r.fileName, r.kind)) {
+      return { ...r, fileUrl: undefined, documentId: undefined }
+    }
+    return r
+  })
+
+  const recordsWithDocs = hasDocumentScope ? records.filter((r) => r.fileUrl) : []
+  const totalDocsCount = hasDocumentScope
+    ? documents.length + recordsWithDocs.filter((r) => !documents.some((d) => d.fileUrl === r.fileUrl)).length
+    : 0
+
+  const availableChips: RecordKind[] = hasDocumentScope
+    ? ['all', 'documents', 'vaccination', 'condition', 'medication', 'allergy', 'report']
+    : ['all', 'vaccination', 'condition', 'medication', 'allergy', 'report']
 
   const filteredRecords = filterKind === 'all'
     ? records
@@ -289,9 +320,9 @@ export default function DoctorPatientDetail() {
                 <p className="font-medium text-ink">{data.patient?.bloodGroup ?? '—'}</p>
               </div>
               <div>
-                <p className="text-xs text-ink-faint">Documents Available</p>
-                <p className="font-semibold text-brand">
-                  {totalDocsCount} {totalDocsCount === 1 ? 'file' : 'files'}
+                <p className="text-xs text-ink-faint">Document Access</p>
+                <p className={`font-semibold ${hasDocumentScope ? 'text-brand' : 'text-ink-soft'}`}>
+                  {hasDocumentScope ? `${totalDocsCount} ${totalDocsCount === 1 ? 'file' : 'files'}` : 'Not Granted'}
                 </p>
               </div>
               <div>
@@ -305,8 +336,8 @@ export default function DoctorPatientDetail() {
             </div>
           </div>
 
-          {/* Quick Documents Banner if files exist */}
-          {documents.length > 0 && filterKind !== 'documents' && (
+          {/* Quick Documents Banner if files exist and document scope was granted */}
+          {hasDocumentScope && documents.length > 0 && filterKind !== 'documents' && (
             <div className="rounded-[20px] border border-brand/20 bg-brand-tint/30 p-5">
               <div className="flex items-center justify-between mb-3">
                 <div className="flex items-center gap-2">
@@ -358,7 +389,7 @@ export default function DoctorPatientDetail() {
                 {filterKind === 'documents' ? 'Medical Documents & Scans' : 'Clinical Records'}
               </h2>
               <div className="flex flex-wrap gap-2">
-                {(['all', 'documents', 'vaccination', 'condition', 'medication', 'allergy', 'report'] as RecordKind[]).map((k) => (
+                {availableChips.map((k) => (
                   <RecordChip
                     key={k}
                     kind={k}
@@ -372,7 +403,15 @@ export default function DoctorPatientDetail() {
 
             {/* If documents filter is active */}
             {filterKind === 'documents' ? (
-              documents.length === 0 && recordsWithDocs.length === 0 ? (
+              !hasDocumentScope ? (
+                <div className={emptyBox}>
+                  <Icon name="lock" size={32} className="mx-auto text-ink-faint" />
+                  <p className="mt-3 text-sm font-semibold text-ink">Document Access Not Granted</p>
+                  <p className="mt-1 text-xs text-ink-soft max-w-md mx-auto">
+                    The patient has not granted consent to view medical documents & scans. You can only view clinical records within your approved consent scopes.
+                  </p>
+                </div>
+              ) : documents.length === 0 && recordsWithDocs.length === 0 ? (
                 <div className={emptyBox}>
                   <Icon name="file" size={32} className="mx-auto text-ink-faint" />
                   <p className="mt-3 text-sm font-medium text-ink">No documents found for this patient.</p>
@@ -461,7 +500,13 @@ export default function DoctorPatientDetail() {
             )}
 
             {/* Embedded Document Preview */}
-            {previewItem.fileUrl ? (
+            {isBirthCertificate(previewItem.title, previewItem.fileName) ? (
+              <div className="rounded-[16px] border border-amber-200 bg-amber-50 p-6 text-center text-sm text-amber-900">
+                <Icon name="shield" size={24} className="mx-auto mb-2 text-amber-600" />
+                <strong className="block font-semibold">Access Restricted</strong>
+                Access to official birth certificate documents is restricted. Practitioners are not permitted to preview or view birth certificates.
+              </div>
+            ) : previewItem.fileUrl ? (
               <div className="mt-4">
                 <div className="mb-2 flex items-center justify-between">
                   <span className="text-xs uppercase font-semibold tracking-wider text-ink-faint">

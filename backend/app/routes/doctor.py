@@ -139,7 +139,7 @@ def get_authorized_documents(
     current_user: AuthenticatedUser = Depends(get_current_user),
 ):
     _require_doctor(current_user)
-    data = doctor_access_patient(current_user, mediclaim_id)
+    data = doctor_access_patient(current_user, mediclaim_id, requested_kind="document")
     docs = data.get("documents", [])
     return {
         "status": "success",

@@ -330,12 +330,13 @@ def revoke_access_grant(patient_profile_id: str, grant_id: str) -> None:
 
     grantee_name = grant["grantee_name"] if grant and grant.get("grantee_name") else "Doctor"
     record_audit(
-        patient_profile_id=raw_pat_id,
+        actor_user_id=None,
+        patient_id=raw_pat_id,
+        action="revoke",
+        what=f"Revoked access grant for {grantee_name}",
         actor_name="Patient",
         actor_role="patient",
-        action="revoke",
-        description=f"Revoked access grant for {grantee_name}",
-        meta={"grantId": f"grt_{raw_grant_id}"}
+        extra_metadata={"grantId": f"grt_{raw_grant_id}"}
     )
 
 
@@ -409,6 +410,38 @@ def remove_caregiver(patient_profile_id: str, caregiver_id: str) -> None:
 
 
 # --- Doctor Scoped Patient Access ---
+def is_birth_certificate_doc(
+    title: Optional[str] = None,
+    filename: Optional[str] = None,
+    document_type: Optional[str] = None,
+) -> bool:
+    """Detect whether a medical document or clinical record attachment is a birth certificate.
+    Doctors and practitioners must NEVER be granted view or download access to birth certificates."""
+    t = (title or "").lower().strip()
+    fn = (filename or "").lower().strip()
+    dt = (document_type or "").lower().strip()
+
+    # Document type indicators
+    if "birth" in dt and any(w in dt for w in ("cert", "certificate", "record", "doc")) or dt == "birth":
+        return True
+
+    # Title indicators
+    if "birth" in t:
+        if any(w in t for w in ("cert", "certificate", "record", "official", "origin", "registration", "proof")):
+            return True
+        if t in ("birth", "birth record", "birth certificate"):
+            return True
+
+    # Filename indicators
+    if "birth" in fn:
+        if any(w in fn for w in ("cert", "certificate", "record", "registration", "proof")):
+            return True
+        if "birth_certificate" in fn or "birth-certificate" in fn or "birthcertificate" in fn:
+            return True
+
+    return False
+
+
 def doctor_access_patient(doctor_user: AuthenticatedUser, mediclaim_id: str, requested_kind: Optional[str] = None) -> Dict[str, Any]:
     clean_med_id = normalize_mediclaim_id(mediclaim_id)
     now = _now_utc()
@@ -464,7 +497,7 @@ def doctor_access_patient(doctor_user: AuthenticatedUser, mediclaim_id: str, req
             grant = {
                 "id": str(uuid.uuid4()),
                 "expires_at": now + timedelta(days=365),
-                "scopes": ["all", "allergy", "condition", "medication", "vaccination", "report"],
+                "scopes": ["all", "allergy", "condition", "medication", "vaccination", "report", "document"],
             }
 
         if not grant:
@@ -476,56 +509,101 @@ def doctor_access_patient(doctor_user: AuthenticatedUser, mediclaim_id: str, req
             )
 
         approved_scopes = grant.get("scopes") or []
+        approved_scopes_lower = [s.lower() for s in approved_scopes]
+        has_document_scope = any(s in ("document", "documents", "all") for s in approved_scopes_lower)
 
         # If doctor explicitly queried an unapproved scope
-        if requested_kind and requested_kind not in ("document", "documents") and "all" not in approved_scopes and requested_kind not in approved_scopes:
-            raise APIProblemException(
-                status_code=status.HTTP_403_FORBIDDEN,
-                title="Scope Unauthorized",
-                detail=f"Patient has not consented to share '{requested_kind}' records. Approved scopes: {', '.join(approved_scopes)}.",
-                code="SCOPE_UNAUTHORIZED"
-            )
+        if requested_kind:
+            req_lower = requested_kind.lower()
+            if req_lower in ("document", "documents"):
+                if not has_document_scope:
+                    raise APIProblemException(
+                        status_code=status.HTTP_403_FORBIDDEN,
+                        title="Scope Unauthorized",
+                        detail=f"Patient has not consented to share documents with you. Approved scopes: {', '.join(approved_scopes)}.",
+                        code="SCOPE_UNAUTHORIZED"
+                    )
+            elif "all" not in approved_scopes_lower and req_lower not in approved_scopes_lower:
+                raise APIProblemException(
+                    status_code=status.HTTP_403_FORBIDDEN,
+                    title="Scope Unauthorized",
+                    detail=f"Patient has not consented to share '{requested_kind}' records. Approved scopes: {', '.join(approved_scopes)}.",
+                    code="SCOPE_UNAUTHORIZED"
+                )
 
-        # Retrieve all uploaded medical documents for this patient
-        raw_pat_id = pat_profile_id.replace("pat-", "").replace("pat_", "")
-        docs_rows = conn.execute("""
-            SELECT id, public_id, title, original_filename, document_type, mime_type,
-                   file_size_bytes, document_date, ocr_status, created_at
-            FROM medical_documents
-            WHERE patient_id = %s AND deleted_at IS NULL
-            ORDER BY created_at DESC
-        """, (raw_pat_id,)).fetchall()
+        documents = []
+        if has_document_scope:
+            # Retrieve uploaded medical documents for this patient ONLY if documents scope was approved
+            raw_pat_id = pat_profile_id.replace("pat-", "").replace("pat_", "")
+            docs_rows = conn.execute("""
+                SELECT id, public_id, title, original_filename, document_type, mime_type,
+                       file_size_bytes, document_date, ocr_status, created_at
+                FROM medical_documents
+                WHERE patient_id = %s AND deleted_at IS NULL
+                ORDER BY created_at DESC
+            """, (raw_pat_id,)).fetchall()
 
-    documents = []
-    for d in docs_rows:
-        doc_id_str = str(d["id"])
-        mime = (d.get("mime_type") or "application/pdf").lower()
-        documents.append({
-            "id": f"doc_{doc_id_str}",
-            "documentId": f"doc_{doc_id_str}",
-            "title": d.get("title") or d.get("original_filename") or "Medical Document",
-            "fileName": d.get("original_filename") or "document.pdf",
-            "fileType": "pdf" if "pdf" in mime else "image",
-            "fileSizeBytes": d.get("file_size_bytes"),
-            "fileUrl": f"/api/v1/documents/doc_{doc_id_str}/content",
-            "documentType": d.get("document_type") or "other",
-            "date": _format_date(d.get("document_date") or d.get("created_at")),
-            "createdAt": _format_iso(d.get("created_at")),
-            "ocrStatus": d.get("ocr_status") or "completed",
-        })
+            for d in docs_rows:
+                # STRICT PRIVACY RULE: Never give view access to birth certificates to doctors
+                if is_birth_certificate_doc(
+                    title=d.get("title"),
+                    filename=d.get("original_filename"),
+                    document_type=d.get("document_type"),
+                ):
+                    continue
+
+                doc_id_str = str(d["id"])
+                mime = (d.get("mime_type") or "application/pdf").lower()
+                documents.append({
+                    "id": f"doc_{doc_id_str}",
+                    "documentId": f"doc_{doc_id_str}",
+                    "title": d.get("title") or d.get("original_filename") or "Medical Document",
+                    "fileName": d.get("original_filename") or "document.pdf",
+                    "fileType": "pdf" if "pdf" in mime else "image",
+                    "fileSizeBytes": d.get("file_size_bytes"),
+                    "fileUrl": f"/api/v1/documents/doc_{doc_id_str}/content",
+                    "documentType": d.get("document_type") or "other",
+                    "date": _format_date(d.get("document_date") or d.get("created_at")),
+                    "createdAt": _format_iso(d.get("created_at")),
+                    "ocrStatus": d.get("ocr_status") or "completed",
+                })
 
     from app.services.records_service import list_patient_records
     # Retrieve records restricted to approved scopes
     all_scoped_records = []
-    if requested_kind in ("document", "documents"):
+    if requested_kind and requested_kind.lower() in ("document", "documents"):
         all_scoped_records = []
-    elif "all" in approved_scopes and not requested_kind:
+    elif "all" in approved_scopes_lower and not requested_kind:
         res = list_patient_records(patient_profile_id=pat_profile_id, kind=None)
         all_scoped_records = res["records"]
     else:
         for sc in (approved_scopes if not requested_kind else [requested_kind]):
+            if sc.lower() in ("document", "documents"):
+                continue
             res = list_patient_records(patient_profile_id=pat_profile_id, kind=sc)
             all_scoped_records.extend(res["records"])
+
+    # Enforce document scope and birth certificate view restrictions on clinical records
+    for rec in all_scoped_records:
+        if not has_document_scope:
+            # Patient did not approve document access; do not expose attached files
+            rec.pop("documentId", None)
+            rec.pop("fileUrl", None)
+            rec.pop("fileName", None)
+            rec.pop("fileType", None)
+            rec.pop("fileSizeBytes", None)
+        else:
+            # Even if document access was approved, never expose birth certificate attachments to doctors
+            if is_birth_certificate_doc(
+                title=rec.get("title"),
+                filename=rec.get("fileName"),
+                document_type=rec.get("kind"),
+            ):
+                rec.pop("documentId", None)
+                rec.pop("fileUrl", None)
+                rec.pop("fileName", None)
+                rec.pop("fileType", None)
+                rec.pop("fileSizeBytes", None)
 
     return {
         "patient": {

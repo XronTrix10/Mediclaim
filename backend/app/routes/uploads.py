@@ -11,6 +11,7 @@ from app.security import get_current_user, AuthenticatedUser
 from app.database import get_db
 from app.exceptions import APIProblemException
 from app.services.storage_service import save_document_bytes, read_document_bytes
+from app.services.consent_service import is_birth_certificate_doc
 from app.services.document_parser import (
     FAILURE_USER_MESSAGE,
     commit_parsed_document,
@@ -317,16 +318,80 @@ def download_document_content(
         current_user.patient_profile_id
         and str(doc["patient_id"]) == str(current_user.patient_profile_id).replace("pat-", "").replace("pat_", "")
     )
-    is_privileged = current_user.has_role("admin", "doctor", "practitioner", "hospital_admin", "organization")
-    if not is_owner and not is_privileged:
-        raise APIProblemException(
-            status_code=status.HTTP_403_FORBIDDEN,
-            title="Access Denied",
-            detail="You are not authorized to view this medical document.",
-            code="FORBIDDEN",
-        )
+    is_admin = current_user.has_role("admin")
 
-    # Restrict practitioners from downloading patient files directly (preview access only)
+    # 1. STRICT PRIVACY RULE: Never give view access to birth certificates to doctors or third parties
+    if not is_owner and not is_admin:
+        if is_birth_certificate_doc(
+            title=doc.get("title"),
+            filename=doc.get("original_filename"),
+            document_type=doc.get("document_type"),
+        ):
+            raise APIProblemException(
+                status_code=status.HTTP_403_FORBIDDEN,
+                title="Access Denied",
+                detail="Access to birth certificate documents is restricted. Practitioners are not permitted to view birth certificates.",
+                code="BIRTH_CERTIFICATE_RESTRICTED",
+            )
+
+    # 2. Authorization check: Owner, Admin, or Doctor with active consent grant with document scope
+    if not is_owner and not is_admin:
+        if not current_user.has_role("doctor", "practitioner", "hospital_admin", "organization"):
+            raise APIProblemException(
+                status_code=status.HTTP_403_FORBIDDEN,
+                title="Access Denied",
+                detail="You are not authorized to view this medical document.",
+                code="FORBIDDEN",
+            )
+
+        raw_doc_id = current_user.raw_uuid
+        pat_id = str(doc["patient_id"])
+        now = datetime.now(timezone.utc)
+        with get_db() as conn:
+            grant = conn.execute("""
+                SELECT g.id,
+                       COALESCE(array_agg(s.record_type) FILTER (WHERE s.record_type IS NOT NULL), '{}') AS scopes
+                FROM patient_access_grants g
+                LEFT JOIN access_grant_scopes s ON s.access_grant_id = g.id
+                WHERE g.patient_id = %s
+                  AND (g.grantee_user_id = %s OR g.organization_id IN (
+                      SELECT organization_id FROM organization_memberships WHERE user_id = %s AND is_active = true
+                  ))
+                  AND g.status = 'active' AND g.expires_at >= %s
+                GROUP BY g.id
+                LIMIT 1
+            """, (pat_id, raw_doc_id, raw_doc_id, now)).fetchone()
+
+            if not grant and current_user.active_grant_id:
+                raw_grt = current_user.active_grant_id.replace("grt_", "").replace("grt-", "")
+                grant = conn.execute("""
+                    SELECT g.id,
+                           COALESCE(array_agg(s.record_type) FILTER (WHERE s.record_type IS NOT NULL), '{}') AS scopes
+                    FROM patient_access_grants g
+                    LEFT JOIN access_grant_scopes s ON s.access_grant_id = g.id
+                    WHERE g.id::text = %s AND g.patient_id = %s
+                      AND g.status = 'active' AND g.expires_at >= %s
+                    GROUP BY g.id
+                """, (raw_grt, pat_id, now)).fetchone()
+
+        if not grant:
+            raise APIProblemException(
+                status_code=status.HTTP_403_FORBIDDEN,
+                title="Access Denied",
+                detail="No active authorization exists to view this patient's medical documents.",
+                code="CONSENT_REQUIRED",
+            )
+
+        scopes = [s.lower() for s in (grant.get("scopes") or [])]
+        if "all" not in scopes and "document" not in scopes and "documents" not in scopes:
+            raise APIProblemException(
+                status_code=status.HTTP_403_FORBIDDEN,
+                title="Scope Unauthorized",
+                detail="Patient has not consented to share documents with you.",
+                code="SCOPE_UNAUTHORIZED",
+            )
+
+    # 3. Restrict practitioners from downloading patient files directly (preview access only)
     if download and not is_owner and not current_user.has_role("admin"):
         raise APIProblemException(
             status_code=status.HTTP_403_FORBIDDEN,
