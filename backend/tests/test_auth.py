@@ -34,6 +34,7 @@ class TestAuthAndSecurity(unittest.TestCase):
         # 1. Register
         reg_payload = RegisterRequest(
             fullName="Test User",
+            email=f"test_{secrets.token_hex(4)}@example.com",
             dateOfBirth=date(1990, 1, 1),
             phone=phone,
             aadhaarNumber=aadhaar,

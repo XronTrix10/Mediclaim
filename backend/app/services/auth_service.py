@@ -71,13 +71,23 @@ def register_user(payload) -> Dict[str, Any]:
                     status_code=status.HTTP_409_CONFLICT,
                     title="Account Already Exists",
                     detail="An account with this email address already exists.",
-                    code="ACCOUNT_ALREADY_EXISTS"
+                    code="ACCOUNT_ALREADY_EXISTS",
+                    errors=[{"field": "email", "message": "An account with this email address already exists."}]
+                )
+            if duplicate.get("phone") == payload.phone:
+                raise APIProblemException(
+                    status_code=status.HTTP_409_CONFLICT,
+                    title="Account Already Exists",
+                    detail="An account with this phone number or Aadhaar number already exists.",
+                    code="ACCOUNT_ALREADY_EXISTS",
+                    errors=[{"field": "phone", "message": "An account with this mobile number already exists."}]
                 )
             raise APIProblemException(
                 status_code=status.HTTP_409_CONFLICT,
                 title="Account Already Exists",
                 detail="An account with this phone number or Aadhaar number already exists.",
-                code="ACCOUNT_ALREADY_EXISTS"
+                code="ACCOUNT_ALREADY_EXISTS",
+                errors=[{"field": "aadhaarNumber", "message": "An account with this Aadhaar number already exists."}]
             )
 
         mediclaim_id = _get_unique_mediclaim_id(conn)

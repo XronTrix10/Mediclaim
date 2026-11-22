@@ -58,6 +58,7 @@ class TestAdminPortalService(unittest.TestCase):
         # 1. Register a new patient
         reg_res = register(RegisterRequest(
             fullName="Sunita Verma",
+            email=f"sunita_{secrets.token_hex(4)}@example.com",
             dateOfBirth=date(1996, 5, 20),
             phone=self.patient_phone,
             aadhaarNumber=self.patient_aadhaar,

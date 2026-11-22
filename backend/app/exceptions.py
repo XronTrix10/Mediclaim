@@ -117,18 +117,46 @@ async def http_exception_handler(request: Request, exc: StarletteHTTPException) 
 async def validation_exception_handler(request: Request, exc: RequestValidationError) -> JSONResponse:
     request_id = getattr(request.state, "request_id", None)
     formatted_errors = []
+
+    FIELD_REQUIRED_MESSAGES = {
+        "fullName": "Full name is required.",
+        "email": "Email address is required.",
+        "dateOfBirth": "Date of birth is required.",
+        "phone": "Mobile number is required.",
+        "aadhaarNumber": "Aadhaar number is required.",
+        "password": "Password is required.",
+    }
+
     for err in exc.errors():
         field = ".".join(str(loc) for loc in err.get("loc", []) if loc != "body")
+        raw_msg = err.get("msg", "Invalid value")
+        err_type = err.get("type", "value_error")
+
+        if raw_msg.startswith("Value error, "):
+            clean_msg = raw_msg[len("Value error, "):].strip()
+        elif err_type == "missing" and field in FIELD_REQUIRED_MESSAGES:
+            clean_msg = FIELD_REQUIRED_MESSAGES[field]
+        elif err_type == "missing":
+            clean_msg = f"{field.replace('_', ' ').capitalize()} is required."
+        else:
+            clean_msg = raw_msg
+
         formatted_errors.append({
             "field": field,
-            "message": err.get("msg", "Invalid value"),
-            "type": err.get("type", "value_error"),
+            "message": clean_msg,
+            "type": err_type,
         })
+
+    if formatted_errors:
+        summary_messages = [e["message"] for e in formatted_errors if e.get("message")]
+        detail_msg = "; ".join(summary_messages[:3])
+    else:
+        detail_msg = "Request payload failed schema validation."
 
     return create_problem_response(
         status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
         title="Validation Error",
-        detail="Request payload failed schema validation.",
+        detail=detail_msg,
         code="VALIDATION_ERROR",
         instance=request.url.path,
         request_id=request_id,

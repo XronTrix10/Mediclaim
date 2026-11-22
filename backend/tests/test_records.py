@@ -1,4 +1,5 @@
 import unittest
+import secrets
 from datetime import date
 from app.schemas.auth import RegisterRequest, VerifyOTPRequest
 from app.schemas.records import (
@@ -29,6 +30,7 @@ class TestRecordsService(unittest.TestCase):
 
         reg_res = register(RegisterRequest(
             fullName="Patient Clinical Records",
+            email=f"records_{secrets.token_hex(4)}@example.com",
             dateOfBirth=date(1992, 4, 15),
             phone=self.phone,
             aadhaarNumber=self.aadhaar,

@@ -1,4 +1,5 @@
 import unittest
+import secrets
 from datetime import date
 from app.schemas.auth import RegisterRequest, VerifyOTPRequest
 from app.schemas.records import NewAllergyInput, NewConditionInput
@@ -34,6 +35,7 @@ class TestConsentAndDoctorAccess(unittest.TestCase):
         # 1. Register Patient
         pat_reg = register(RegisterRequest(
             fullName="Patient Consent Test",
+            email=f"pat_consent_{secrets.token_hex(4)}@example.com",
             dateOfBirth=date(1995, 6, 20),
             phone=self.patient_phone,
             aadhaarNumber=self.patient_aadhaar,
@@ -71,6 +73,7 @@ class TestConsentAndDoctorAccess(unittest.TestCase):
         # 2. Register Doctor User
         doc_reg = register(RegisterRequest(
             fullName="Dr. Farhan Ali",
+            email=f"dr_farhan_{secrets.token_hex(4)}@example.com",
             dateOfBirth=date(1985, 3, 10),
             phone=self.doctor_phone,
             aadhaarNumber=self.doctor_aadhaar,

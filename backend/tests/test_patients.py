@@ -1,4 +1,5 @@
 import unittest
+import secrets
 from datetime import date
 from app.schemas.auth import RegisterRequest, VerifyOTPRequest
 from app.schemas.patient import CompleteProfileRequest, PermittedDetailsUpdateRequest, EmergencyContact
@@ -23,6 +24,7 @@ class TestPatientProfile(unittest.TestCase):
         # Register user
         reg_res = register(RegisterRequest(
             fullName="Ananya Rao",
+            email=f"ananya_{secrets.token_hex(4)}@example.com",
             dateOfBirth=date(1994, 5, 12),
             phone=self.phone,
             aadhaarNumber=self.aadhaar,

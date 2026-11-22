@@ -33,6 +33,7 @@ class TestEmergencyAuditCorrections(unittest.TestCase):
         # Register Patient
         pat_reg = register(RegisterRequest(
             fullName="Patient Emergency Test",
+            email=f"pat_er_{secrets.token_hex(4)}@example.com",
             dateOfBirth=date(1993, 8, 25),
             phone=self.patient_phone,
             aadhaarNumber=self.patient_aadhaar,
@@ -72,6 +73,7 @@ class TestEmergencyAuditCorrections(unittest.TestCase):
         # Register ER Doctor
         doc_reg = register(RegisterRequest(
             fullName="Dr. Rohan Kulkarni",
+            email=f"dr_rohan_{secrets.token_hex(4)}@example.com",
             dateOfBirth=date(1982, 11, 5),
             phone=self.doctor_phone,
             aadhaarNumber=self.doctor_aadhaar,

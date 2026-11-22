@@ -1,4 +1,5 @@
 import unittest
+import secrets
 from datetime import date
 from app.schemas.auth import RegisterRequest, VerifyOTPRequest
 from app.schemas.records import NewAllergyInput, NewConditionInput, NewMedicationInput
@@ -24,6 +25,7 @@ class TestTimelineAndGraph(unittest.TestCase):
         # Register user born on 1994-05-12
         reg_res = register(RegisterRequest(
             fullName="Ananya Timeline",
+            email=f"timeline_{secrets.token_hex(4)}@example.com",
             dateOfBirth=date(1994, 5, 12),
             phone=self.phone,
             aadhaarNumber=self.aadhaar,

@@ -53,7 +53,7 @@ export interface RequestOtpResult {
 export const authApi = {
   async register(payload: {
     fullName: string
-    email?: string
+    email: string
     dateOfBirth: string
     phone: string
     aadhaarNumber: string

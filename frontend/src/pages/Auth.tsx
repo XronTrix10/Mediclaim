@@ -171,56 +171,254 @@ function PatientRegisterForm({ onSwitch }: FormProps) {
   const [debugOtp, setDebugOtp] = useState<string | null>(null)
   const [loading, setLoading] = useState(false)
   const [error, setError] = useState<string | null>(null)
+  const [successMessage, setSuccessMessage] = useState<string | null>(null)
+  const [errors, setErrors] = useState<Record<string, string | undefined>>({})
+
+  const maxDobDate = new Date().toISOString().split('T')[0]
+
+  function validateFullNameField(val: string): string | undefined {
+    const clean = val.trim()
+    if (!clean) return 'Full name is required.'
+    if (clean.length < 3) return 'Name must contain at least 3 characters.'
+    if (clean.length > 100) return 'Name must not exceed 100 characters.'
+    const nameRegex = /^[A-Za-z]+(?:(?:\. |\.|'|-|\s)[A-Za-z]+)*\.?$/
+    if (!nameRegex.test(clean) || /\d/.test(clean)) return 'Please enter a valid name.'
+    return undefined
+  }
+
+  function validateEmailField(val: string): string | undefined {
+    const clean = val.trim()
+    if (!clean) return 'Email address is required.'
+    if (clean.length > 254) return 'Email address cannot exceed 254 characters.'
+    const emailRegex = /^[a-zA-Z0-9_.+-]+@[a-zA-Z0-9-]+\.[a-zA-Z0-9-.]+$/
+    if (!emailRegex.test(clean)) return 'Please enter a valid email address.'
+    return undefined
+  }
+
+  function validateDobField(val: string): string | undefined {
+    if (!val) return 'Date of birth is required.'
+    const dob = new Date(val + 'T00:00:00')
+    if (isNaN(dob.getTime())) return 'Please enter a valid date of birth.'
+    const today = new Date()
+    today.setHours(0, 0, 0, 0)
+    if (dob > today) return 'Date of birth cannot be in the future.'
+    if (dob.getFullYear() < 1900) return 'Please enter a valid date of birth.'
+    return undefined
+  }
+
+  function validatePhoneField(val: string): string | undefined {
+    const clean = val.trim().replace(/^(\+91|91)/, '').replace(/\s+/g, '')
+    if (!clean) return 'Mobile number is required.'
+    if (!/^\d+$/.test(clean) || clean.length !== 10) return 'Mobile number must contain exactly 10 digits.'
+    if (!/^[6-9]/.test(clean)) return 'Please enter a valid Indian mobile number.'
+    return undefined
+  }
+
+  function validateAadhaarField(val: string): string | undefined {
+    const clean = val.replace(/[\s-]+/g, '')
+    if (!clean) return 'Aadhaar number is required.'
+    if (clean.length !== 12) return 'Aadhaar number must contain exactly 12 digits.'
+    if (!/^\d{12}$/.test(clean) || /^(\d)\1{11}$/.test(clean)) return 'Please enter a valid Aadhaar number.'
+    return undefined
+  }
+
+  function validatePasswordField(val: string): string | undefined {
+    if (!val) return 'Password is required.'
+    if (val.length < 8) return 'Password must contain at least 8 characters.'
+    return undefined
+  }
+
+  const handleFullNameChange = (e: React.ChangeEvent<HTMLInputElement>) => {
+    const val = e.target.value
+    setFullName(val)
+    if (errors.fullName) {
+      setErrors((prev) => ({ ...prev, fullName: validateFullNameField(val) }))
+    }
+  }
+
+  const handleEmailChange = (e: React.ChangeEvent<HTMLInputElement>) => {
+    const val = e.target.value
+    setEmail(val)
+    if (errors.email) {
+      setErrors((prev) => ({ ...prev, email: validateEmailField(val) }))
+    }
+  }
+
+  const handleDobChange = (e: React.ChangeEvent<HTMLInputElement>) => {
+    const val = e.target.value
+    setDateOfBirth(val)
+    if (errors.dateOfBirth) {
+      setErrors((prev) => ({ ...prev, dateOfBirth: validateDobField(val) }))
+    }
+  }
+
+  const handlePhoneChange = (e: React.ChangeEvent<HTMLInputElement>) => {
+    const val = e.target.value.replace(/\D/g, '').slice(0, 10)
+    setPhone(val)
+    if (errors.phone) {
+      setErrors((prev) => ({ ...prev, phone: validatePhoneField(val) }))
+    }
+  }
+
+  const handleAadhaarChange = (e: React.ChangeEvent<HTMLInputElement>) => {
+    const val = e.target.value.replace(/\D/g, '').slice(0, 12)
+    setAadhaarNumber(val)
+    if (errors.aadhaarNumber) {
+      setErrors((prev) => ({ ...prev, aadhaarNumber: validateAadhaarField(val) }))
+    }
+  }
+
+  const handlePasswordChange = (e: React.ChangeEvent<HTMLInputElement>) => {
+    const val = e.target.value
+    setPassword(val)
+    if (errors.password) {
+      setErrors((prev) => ({ ...prev, password: validatePasswordField(val) }))
+    }
+  }
+
+  const handleBlurField = (field: 'fullName' | 'email' | 'dateOfBirth' | 'phone' | 'aadhaarNumber' | 'password') => {
+    let err: string | undefined
+    if (field === 'fullName') err = validateFullNameField(fullName)
+    else if (field === 'email') err = validateEmailField(email)
+    else if (field === 'dateOfBirth') err = validateDobField(dateOfBirth)
+    else if (field === 'phone') err = validatePhoneField(phone)
+    else if (field === 'aadhaarNumber') err = validateAadhaarField(aadhaarNumber)
+    else if (field === 'password') err = validatePasswordField(password)
+    setErrors((prev) => ({ ...prev, [field]: err }))
+  }
 
   async function handleRegister(e: FormEvent) {
-    e.preventDefault(); setError(null)
-    let formattedPhone = phone.trim()
-    if (!formattedPhone.startsWith('+')) formattedPhone = `+91${formattedPhone.replace(/^0+/, '')}`
+    e.preventDefault()
+    if (loading) return
+    setError(null)
+    setSuccessMessage(null)
+
+    const nameErr = validateFullNameField(fullName)
+    const emailErr = validateEmailField(email)
+    const dobErr = validateDobField(dateOfBirth)
+    const phoneErr = validatePhoneField(phone)
+    const aadhaarErr = validateAadhaarField(aadhaarNumber)
+    const passwordErr = validatePasswordField(password)
+
+    const newErrors = {
+      fullName: nameErr,
+      email: emailErr,
+      dateOfBirth: dobErr,
+      phone: phoneErr,
+      aadhaarNumber: aadhaarErr,
+      password: passwordErr,
+    }
+    setErrors(newErrors)
+
+    if (nameErr || emailErr || dobErr || phoneErr || aadhaarErr || passwordErr) {
+      setError('Please resolve all validation errors before submitting.')
+      return
+    }
+
+    if (!agreed) {
+      setError('You must agree to the Terms of Use and the Privacy Policy.')
+      return
+    }
+
     setLoading(true)
     try {
+      const cleanPhone = phone.trim().replace(/^(\+91|91)/, '').replace(/\s+/g, '')
+      const cleanAadhaar = aadhaarNumber.replace(/[\s-]+/g, '')
+
       const res = await authApi.register({
         fullName: fullName.trim(),
-        email: email.trim(),
+        email: email.trim().toLowerCase(),
         dateOfBirth,
-        phone: formattedPhone,
-        aadhaarNumber: aadhaarNumber.replace(/\s+/g, ''),
+        phone: cleanPhone,
+        aadhaarNumber: cleanAadhaar,
         password,
       })
+
+      setSuccessMessage('Registration successful! Verification code sent to your mobile.')
       setPendingUserId(res.userId)
       if (res.debugOtp) setDebugOtp(res.debugOtp)
     } catch (err: any) {
-      setError(err instanceof ApiError ? err.message : 'Registration failed. Please check your details.')
-    } finally { setLoading(false) }
+      if (err instanceof ApiError) {
+        if (err.errors && err.errors.length > 0) {
+          const backendFieldErrors: Record<string, string> = {}
+          for (const item of err.errors) {
+            if (item.field) {
+              backendFieldErrors[item.field] = item.message
+            }
+          }
+          setErrors((prev) => ({ ...prev, ...backendFieldErrors }))
+        }
+        setError(err.message || 'Registration failed. Please check your details.')
+      } else {
+        setError('Registration failed. Please check your details.')
+      }
+    } finally {
+      setLoading(false)
+    }
   }
 
   async function handleVerifyOtp(e: FormEvent) {
     e.preventDefault()
     if (!pendingUserId) return
-    setError(null); setLoading(true)
-    try { await authApi.verifyOtp(pendingUserId, otp.trim()); setIsAwaitingApproval(true) }
-    catch (err: any) { setError(err instanceof ApiError ? err.message : 'Invalid verification code.') }
-    finally { setLoading(false) }
+    setError(null)
+    setLoading(true)
+    try {
+      await authApi.verifyOtp(pendingUserId, otp.trim())
+      setIsAwaitingApproval(true)
+    } catch (err: any) {
+      setError(err instanceof ApiError ? err.message : 'Invalid verification code.')
+    } finally {
+      setLoading(false)
+    }
   }
 
   async function handleResend() {
-    if (!pendingUserId) return; setError(null)
-    try { const res = await authApi.resendOtp(pendingUserId); if (res.debugOtp) setDebugOtp(res.debugOtp) }
-    catch { setError('Could not resend OTP.') }
+    if (!pendingUserId) return
+    setError(null)
+    try {
+      const res = await authApi.resendOtp(pendingUserId)
+      if (res.debugOtp) setDebugOtp(res.debugOtp)
+    } catch {
+      setError('Could not resend OTP.')
+    }
   }
 
   if (isAwaitingApproval) {
     return (
-      <AuthShell title="Account Submitted" subtitle="Your mobile number has been verified successfully." footer={<>Already have your ID?{' '}<button type="button" onClick={onSwitch} className="cursor-pointer font-semibold text-brand hover:underline hover:underline-offset-4">Sign in</button></>}>
+      <AuthShell
+        title="Account Submitted"
+        subtitle="Your mobile number has been verified successfully."
+        footer={
+          <>
+            Already have your ID?{' '}
+            <button
+              type="button"
+              onClick={onSwitch}
+              className="cursor-pointer font-semibold text-brand hover:underline hover:underline-offset-4"
+            >
+              Sign in
+            </button>
+          </>
+        }
+      >
         <div className="mt-6 grid gap-5">
           <div className="rounded-[20px] border border-line bg-mist/60 p-5 text-center">
             <div className="mx-auto flex size-12 items-center justify-center rounded-full bg-brand-tint text-brand">
-              <svg className="size-6" fill="none" viewBox="0 0 24 24" strokeWidth="2" stroke="currentColor"><path strokeLinecap="round" strokeLinejoin="round" d="M9 12.75 11.25 15 15 9.75M21 12c0 1.268-.63 2.39-1.593 3.068a3.745 3.745 0 0 1-1.043 3.296 3.745 3.745 0 0 1-3.296 1.043A3.745 3.745 0 0 1 12 21c-1.268 0-2.39-.63-3.068-1.593a3.746 3.746 0 0 1-3.296-1.043 3.745 3.745 0 0 1-1.043-3.296A3.745 3.745 0 0 1 3 12c0-1.268.63-2.39 1.593-3.068a3.745 3.745 0 0 1 1.043-3.296 3.746 3.746 0 0 1 3.296-1.043A3.746 3.746 0 0 1 12 3c1.268 0 2.39.63 3.068 1.593a3.746 3.746 0 0 1 3.296 1.043 3.746 3.746 0 0 1 1.043 3.296A3.745 3.745 0 0 1 21 12Z" /></svg>
+              <svg className="size-6" fill="none" viewBox="0 0 24 24" strokeWidth="2" stroke="currentColor">
+                <path strokeLinecap="round" strokeLinejoin="round" d="M9 12.75 11.25 15 15 9.75M21 12c0 1.268-.63 2.39-1.593 3.068a3.745 3.745 0 0 1-1.043 3.296 3.745 3.745 0 0 1-3.296 1.043A3.745 3.745 0 0 1 12 21c-1.268 0-2.39-.63-3.068-1.593a3.746 3.746 0 0 1-3.296-1.043 3.745 3.745 0 0 1-1.043-3.296A3.745 3.745 0 0 1 3 12c0-1.268.63-2.39 1.593-3.068a3.745 3.745 0 0 1 1.043-3.296 3.746 3.746 0 0 1 3.296-1.043A3.746 3.746 0 0 1 12 3c1.268 0 2.39.63 3.068 1.593a3.746 3.746 0 0 1 3.296 1.043 3.746 3.746 0 0 1 1.043 3.296A3.745 3.745 0 0 1 21 12Z" />
+              </svg>
             </div>
             <h3 className="mt-3 text-base font-semibold text-ink">Awaiting Admin Verification</h3>
-            <p className="mt-2 text-sm leading-relaxed text-ink-soft">Please wait until an administrator verifies your account with all your details.</p>
-            <p className="mt-2 text-sm leading-relaxed text-ink-soft">Once approved, you will receive your <strong className="font-semibold text-ink">Mediclaim ID</strong> via email or SMS.</p>
+            <p className="mt-2 text-sm leading-relaxed text-ink-soft">
+              Please wait until an administrator verifies your account with all your details.
+            </p>
+            <p className="mt-2 text-sm leading-relaxed text-ink-soft">
+              Once approved, your <strong className="font-semibold text-ink">Mediclaim ID</strong> will be generated and dispatched directly to your registered email address.
+            </p>
           </div>
-          <button type="button" onClick={onSwitch} className={`${button('primary', 'lg')} w-full`}>Back to Sign in</button>
+          <button type="button" onClick={onSwitch} className={`${button('primary', 'lg')} w-full`}>
+            Back to Sign in
+          </button>
         </div>
       </AuthShell>
     )
@@ -228,37 +426,212 @@ function PatientRegisterForm({ onSwitch }: FormProps) {
 
   if (pendingUserId) {
     return (
-      <AuthShell title="Verify your number" subtitle={`We sent a 6-digit code to ${phone}.`} footer={<>Entered the wrong phone?{' '}<button type="button" onClick={() => { setPendingUserId(null); setError(null) }} className="cursor-pointer font-semibold text-brand hover:underline">Start over</button></>}>
+      <AuthShell
+        title="Verify your number"
+        subtitle={`We sent a 6-digit code to ${phone}.`}
+        footer={
+          <>
+            Entered the wrong phone?{' '}
+            <button
+              type="button"
+              onClick={() => {
+                setPendingUserId(null)
+                setError(null)
+                setSuccessMessage(null)
+              }}
+              className="cursor-pointer font-semibold text-brand hover:underline"
+            >
+              Start over
+            </button>
+          </>
+        }
+      >
         <ErrorBanner msg={error} />
-        {debugOtp && <div className="mt-3 rounded-lg bg-brand-tint px-3 py-2 text-center text-xs text-brand-deep font-mono font-medium">Dev Mode OTP: <strong>{debugOtp}</strong></div>}
+        {debugOtp && (
+          <div className="mt-3 rounded-lg bg-brand-tint px-3 py-2 text-center text-xs text-brand-deep font-mono font-medium">
+            Dev Mode OTP: <strong>{debugOtp}</strong>
+          </div>
+        )}
         <form className="mt-6 grid gap-4.5" onSubmit={handleVerifyOtp}>
           <Field label="6-digit verification code" htmlFor="reg-otp">
-            <input id="reg-otp" className={input} inputMode="numeric" maxLength={6} placeholder="000000" value={otp} onChange={(e) => setOtp(e.target.value)} autoFocus required />
+            <input
+              id="reg-otp"
+              className={input}
+              inputMode="numeric"
+              maxLength={6}
+              placeholder="000000"
+              value={otp}
+              onChange={(e) => setOtp(e.target.value)}
+              autoFocus
+              required
+            />
           </Field>
-          <button className={`${button('primary', 'lg')} w-full`} type="submit" disabled={loading}>{loading ? 'Verifying code...' : 'Verify mobile number'}</button>
-          <button type="button" onClick={handleResend} className="text-center text-sm font-semibold text-brand hover:underline">Resend verification code</button>
+          <button className={`${button('primary', 'lg')} w-full`} type="submit" disabled={loading}>
+            {loading ? 'Verifying code...' : 'Verify mobile number'}
+          </button>
+          <button type="button" onClick={handleResend} className="text-center text-sm font-semibold text-brand hover:underline">
+            Resend verification code
+          </button>
         </form>
       </AuthShell>
     )
   }
 
   return (
-    <AuthShell title="Create your account" subtitle="We will send a one-time code to your mobile number to verify it." footer={<>Already registered?{' '}<button type="button" onClick={onSwitch} className="cursor-pointer font-semibold text-brand hover:underline hover:underline-offset-4">Sign in</button></>}>
+    <AuthShell
+      title="Create your account"
+      subtitle="Enter your personal details to register for your Mediclaim account."
+      footer={
+        <>
+          Already registered?{' '}
+          <button
+            type="button"
+            onClick={onSwitch}
+            className="cursor-pointer font-semibold text-brand hover:underline hover:underline-offset-4"
+          >
+            Sign in
+          </button>
+        </>
+      }
+    >
       <ErrorBanner msg={error} />
-      <form className="mt-7 grid gap-4.5" onSubmit={handleRegister}>
-        <Field label="Full name" htmlFor="name"><input id="name" className={input} autoComplete="name" value={fullName} onChange={(e) => setFullName(e.target.value)} placeholder="Aarav Sharma" required /></Field>
-        <Field label="Email address" htmlFor="email" hint="Your Mediclaim ID will be sent here upon approval."><input id="email" type="email" className={input} autoComplete="email" value={email} onChange={(e) => setEmail(e.target.value)} placeholder="aarav.sharma@example.com" required /></Field>
+      <form className="mt-7 grid gap-4.5" onSubmit={handleRegister} noValidate>
+        <Field label="Full name" htmlFor="name" error={errors.fullName}>
+          <input
+            id="name"
+            name="fullName"
+            type="text"
+            className={`${input} ${errors.fullName ? '!border-red-500 focus:!border-red-500 focus:!ring-red-500/20' : ''}`}
+            autoComplete="name"
+            minLength={3}
+            maxLength={100}
+            value={fullName}
+            onChange={handleFullNameChange}
+            onBlur={() => handleBlurField('fullName')}
+            placeholder="Aarav Sharma"
+            required
+          />
+        </Field>
+
+        <Field label="Email address" htmlFor="email" hint="Your Mediclaim ID will be sent here upon approval." error={errors.email}>
+          <input
+            id="email"
+            name="email"
+            type="email"
+            className={`${input} ${errors.email ? '!border-red-500 focus:!border-red-500 focus:!ring-red-500/20' : ''}`}
+            autoComplete="email"
+            maxLength={254}
+            value={email}
+            onChange={handleEmailChange}
+            onBlur={() => handleBlurField('email')}
+            placeholder="aarav.sharma@example.com"
+            required
+          />
+        </Field>
+
         <div className="grid gap-4.5 sm:grid-cols-2">
-          <Field label="Date of birth" htmlFor="dob"><input id="dob" type="date" className={input} autoComplete="bday" value={dateOfBirth} onChange={(e) => setDateOfBirth(e.target.value)} required /></Field>
-          <Field label="Mobile number" htmlFor="phone"><input id="phone" type="tel" className={input} autoComplete="tel" placeholder="+91 98765 43210" value={phone} onChange={(e) => setPhone(e.target.value)} required /></Field>
+          <Field label="Date of birth" htmlFor="dob" error={errors.dateOfBirth}>
+            <input
+              id="dob"
+              name="dateOfBirth"
+              type="date"
+              max={maxDobDate}
+              className={`${input} ${errors.dateOfBirth ? '!border-red-500 focus:!border-red-500 focus:!ring-red-500/20' : ''}`}
+              autoComplete="bday"
+              value={dateOfBirth}
+              onChange={handleDobChange}
+              onBlur={() => handleBlurField('dateOfBirth')}
+              required
+            />
+          </Field>
+
+          <Field label="Mobile number" htmlFor="phone" error={errors.phone}>
+            <input
+              id="phone"
+              name="phone"
+              type="tel"
+              className={`${input} ${errors.phone ? '!border-red-500 focus:!border-red-500 focus:!ring-red-500/20' : ''}`}
+              autoComplete="tel"
+              placeholder="9876543210"
+              pattern="[6-9][0-9]{9}"
+              minLength={10}
+              maxLength={10}
+              value={phone}
+              onChange={handlePhoneChange}
+              onBlur={() => handleBlurField('phone')}
+              required
+            />
+          </Field>
         </div>
-        <Field label="Aadhaar number" htmlFor="aadhaar" hint="Your 12-digit Aadhaar number."><input id="aadhaar" className={input} inputMode="numeric" maxLength={14} placeholder="0000 0000 0000" value={aadhaarNumber} onChange={(e) => setAadhaarNumber(e.target.value)} required /></Field>
-        <Field label="Password" htmlFor="new-password" hint="At least 8 characters."><input id="new-password" type="password" className={input} autoComplete="new-password" minLength={8} value={password} onChange={(e) => setPassword(e.target.value)} required /></Field>
+
+        <Field label="Aadhaar number" htmlFor="aadhaar" hint="Your 12-digit Aadhaar number." error={errors.aadhaarNumber}>
+          <input
+            id="aadhaar"
+            name="aadhaarNumber"
+            type="text"
+            className={`${input} ${errors.aadhaarNumber ? '!border-red-500 focus:!border-red-500 focus:!ring-red-500/20' : ''}`}
+            inputMode="numeric"
+            pattern="[0-9]{12}"
+            minLength={12}
+            maxLength={12}
+            placeholder="0000 0000 0000"
+            value={aadhaarNumber}
+            onChange={handleAadhaarChange}
+            onBlur={() => handleBlurField('aadhaarNumber')}
+            required
+          />
+        </Field>
+
+        <Field label="Password" htmlFor="new-password" hint="At least 8 characters." error={errors.password}>
+          <input
+            id="new-password"
+            name="password"
+            type="password"
+            className={`${input} ${errors.password ? '!border-red-500 focus:!border-red-500 focus:!ring-red-500/20' : ''}`}
+            autoComplete="new-password"
+            minLength={8}
+            maxLength={128}
+            value={password}
+            onChange={handlePasswordChange}
+            onBlur={() => handleBlurField('password')}
+            required
+          />
+        </Field>
+
         <label className="flex items-start gap-2.5 text-sm text-ink-soft cursor-pointer">
-          <input type="checkbox" className="mt-0.5 size-4.5 accent-brand" checked={agreed} onChange={(e) => setAgreed(e.target.checked)} required />
+          <input
+            type="checkbox"
+            className="mt-0.5 size-4.5 accent-brand"
+            checked={agreed}
+            onChange={(e) => setAgreed(e.target.checked)}
+            required
+          />
           <span>I agree to the Terms of Use and the Privacy Policy.</span>
         </label>
-        <button className={`${button('primary', 'lg')} w-full`} type="submit" disabled={loading}>{loading ? 'Creating account...' : 'Create account'}</button>
+
+        {successMessage && (
+          <div role="status" className="rounded-xl bg-emerald-50 border border-emerald-200 p-3 text-sm font-medium text-emerald-800">
+            {successMessage}
+          </div>
+        )}
+
+        <button
+          className={`${button('primary', 'lg')} w-full flex items-center justify-center gap-2`}
+          type="submit"
+          disabled={loading}
+        >
+          {loading ? (
+            <>
+              <svg className="size-5 animate-spin text-white" viewBox="0 0 24 24" fill="none">
+                <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4" />
+                <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z" />
+              </svg>
+              <span>Creating account...</span>
+            </>
+          ) : (
+            'Create account'
+          )}
+        </button>
       </form>
     </AuthShell>
   )

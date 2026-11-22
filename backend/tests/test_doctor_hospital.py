@@ -70,6 +70,7 @@ class TestDoctorHospitalSuite(unittest.TestCase):
         self.patient_aadhaar = str(secrets.randbelow(900000000000) + 100000000000)
         reg_res = register(RegisterRequest(
             fullName="Rohan Das",
+            email=f"rohan_{secrets.token_hex(4)}@example.com",
             dateOfBirth=date(1991, 7, 14),
             phone=self.patient_phone,
             aadhaarNumber=self.patient_aadhaar,
