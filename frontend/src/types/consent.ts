@@ -18,6 +18,7 @@ export interface AccessRequest {
   role: string
   scope: Kind[]
   durationHours: number
+  purpose?: string
   requestedAt?: string
 }
 

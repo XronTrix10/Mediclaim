@@ -616,7 +616,6 @@ function DoctorRegisterForm({ onSwitch }: FormProps) {
 function HospitalLoginForm({ onSwitch, onSuccess }: FormProps) {
   const [hospitalId, setHospitalId] = useState('')
   const [email, setEmail] = useState('')
-  const [phone, setPhone] = useState('')
   const [password, setPassword] = useState('')
   const [otp, setOtp] = useState('')
   const [useOtp, setUseOtp] = useState(true)
@@ -632,8 +631,8 @@ function HospitalLoginForm({ onSwitch, onSuccess }: FormProps) {
       setError('Please enter your Hospital ID (e.g. HS-10294).')
       return
     }
-    if (useEmail && !email.trim() && !phone.trim()) {
-      setError('Please enter your registered email or phone.')
+    if (useEmail && !email.trim()) {
+      setError('Please enter your registered email.')
       return
     }
     setError(null)
@@ -642,7 +641,7 @@ function HospitalLoginForm({ onSwitch, onSuccess }: FormProps) {
       const res = await authApi.hospitalRequestOtp(
         !useEmail
           ? { hospitalId: hospitalId.trim() }
-          : { email: email.trim() || undefined, phone: phone.trim() || undefined }
+          : { email: email.trim() || undefined }
       )
       setMaskedPhone(res.maskedPhone)
       setOtpSent(true)
@@ -666,7 +665,7 @@ function HospitalLoginForm({ onSwitch, onSuccess }: FormProps) {
       await authApi.hospitalVerifyOtp(
         !useEmail
           ? { hospitalId: hospitalId.trim(), otp: otp.trim() }
-          : { email: email.trim() || undefined, phone: phone.trim() || undefined, otp: otp.trim() }
+          : { email: email.trim() || undefined, otp: otp.trim() }
       )
       onSuccess()
     } catch (err: any) {
