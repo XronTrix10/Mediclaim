@@ -8,6 +8,7 @@ interface AuthenticatedFilePreviewProps {
   fileName?: string
   fileType?: 'pdf' | 'image' | string
   compact?: boolean
+  readOnly?: boolean
 }
 
 /**
@@ -19,6 +20,7 @@ export default function AuthenticatedFilePreview({
   fileName,
   fileType,
   compact = false,
+  readOnly = false,
 }: AuthenticatedFilePreviewProps) {
   const [objectUrl, setObjectUrl] = useState<string | null>(null)
   const [detectedMime, setDetectedMime] = useState<string>('')
@@ -113,15 +115,17 @@ export default function AuthenticatedFilePreview({
           />
           <div className="flex items-center justify-between gap-2 px-1 text-xs text-ink-faint">
             <span className="truncate font-medium text-ink">{fileName || 'Uploaded PDF'}</span>
-            <a
-              href={objectUrl}
-              target="_blank"
-              rel="noopener noreferrer"
-              className={button('ghost', 'sm')}
-            >
-              <Icon name="file" size={14} />
-              Open in new tab
-            </a>
+            {!readOnly && (
+              <a
+                href={objectUrl}
+                target="_blank"
+                rel="noopener noreferrer"
+                className={button('ghost', 'sm')}
+              >
+                <Icon name="file" size={14} />
+                Open in new tab
+              </a>
+            )}
           </div>
         </div>
       ) : (
@@ -133,15 +137,17 @@ export default function AuthenticatedFilePreview({
           />
           <div className="flex items-center justify-between gap-2 px-1 text-xs text-ink-faint">
             <span className="truncate font-medium text-ink">{fileName || 'Uploaded image'}</span>
-            <a
-              href={objectUrl}
-              target="_blank"
-              rel="noopener noreferrer"
-              className={button('ghost', 'sm')}
-            >
-              <Icon name="image" size={14} />
-              Open full size
-            </a>
+            {!readOnly && (
+              <a
+                href={objectUrl}
+                target="_blank"
+                rel="noopener noreferrer"
+                className={button('ghost', 'sm')}
+              >
+                <Icon name="image" size={14} />
+                Open full size
+              </a>
+            )}
           </div>
         </div>
       )}

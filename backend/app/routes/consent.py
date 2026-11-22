@@ -100,9 +100,12 @@ def decline_request(
 
 # --- Grants Management ---
 @router.get("/grants", response_model=AccessGrantsListResponse, status_code=status.HTTP_200_OK)
-def get_grants(current_user: AuthenticatedUser = Depends(get_current_user)):
+def get_grants(
+    status: Optional[str] = Query("active", description="active | expired | revoked | all"),
+    current_user: AuthenticatedUser = Depends(get_current_user),
+):
     pat_id = _get_patient_id(current_user)
-    grants = list_access_grants(pat_id)
+    grants = list_access_grants(pat_id, status_filter=status)
     return {
         "status": "success",
         "data": grants,

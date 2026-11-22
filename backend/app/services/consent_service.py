@@ -5,6 +5,7 @@ from fastapi import status
 from app.database import get_db
 from app.exceptions import APIProblemException
 from app.security import normalize_mediclaim_id, format_mediclaim_id, AuthenticatedUser
+from app.services.audit_service import record_audit
 
 
 def _now_utc() -> datetime:
@@ -157,6 +158,7 @@ def approve_access_request(patient_profile_id: str, request_id: str, payload) ->
             """, (raw_req_id, sc))
 
     return {
+        "id": f"grt_{raw_req_id}",
         "grantId": f"grt_{raw_req_id}",
         "grantStatus": "active",
         "name": grant.get("grantee_name") or "Doctor",
@@ -186,7 +188,7 @@ def decline_access_request(patient_profile_id: str, request_id: str) -> None:
             )
 
 
-def list_access_grants(patient_profile_id: str) -> List[Dict[str, Any]]:
+def list_access_grants(patient_profile_id: str, status_filter: Optional[str] = "active") -> List[Dict[str, Any]]:
     raw_pat_id = patient_profile_id.replace("pat-", "").replace("pat_", "")
     now = _now_utc()
 
@@ -198,20 +200,32 @@ def list_access_grants(patient_profile_id: str) -> List[Dict[str, Any]]:
             WHERE patient_id = %s AND status = 'active' AND expires_at < %s
         """, (raw_pat_id, now))
 
-        rows = conn.execute("""
+        clean_status = (status_filter or "active").lower()
+        if clean_status == "all":
+            where_status = "g.status IN ('active', 'expired', 'revoked')"
+            params: List[Any] = [raw_pat_id]
+        elif clean_status == "active":
+            where_status = "g.status = 'active' AND g.expires_at >= %s"
+            params = [raw_pat_id, now]
+        else:
+            where_status = "g.status = %s"
+            params = [raw_pat_id, clean_status]
+
+        rows = conn.execute(f"""
             SELECT g.*,
-                   COALESCE(array_agg(s.record_type) FILTER (WHERE s.record_type IS NOT NULL), '{}') AS scopes
+                   COALESCE(array_agg(s.record_type) FILTER (WHERE s.record_type IS NOT NULL), '{{}}') AS scopes
             FROM patient_access_grants g
             LEFT JOIN access_grant_scopes s ON s.access_grant_id = g.id
-            WHERE g.patient_id = %s AND g.status IN ('active', 'expired', 'revoked')
+            WHERE g.patient_id = %s AND {where_status}
             GROUP BY g.id
             ORDER BY g.created_at DESC
-        """, (raw_pat_id,)).fetchall()
+        """, tuple(params)).fetchall()
 
     grants = []
     for r in rows:
         grants.append({
             "id": f"grt_{r['id']}",
+            "grantId": f"grt_{r['id']}",
             "name": r.get("grantee_name") or "Practitioner",
             "role": r.get("grantee_role") or "Practitioner",
             "scope": r.get("scopes") or [],
@@ -251,6 +265,7 @@ def directly_give_access(patient_profile_id: str, user_id: str, payload) -> Dict
 
     return {
         "id": f"grt_{grant_uuid}",
+        "grantId": f"grt_{grant_uuid}",
         "name": payload.name,
         "role": payload.role or "Practitioner",
         "scope": payload.scope,
@@ -261,23 +276,44 @@ def directly_give_access(patient_profile_id: str, user_id: str, payload) -> Dict
 
 
 def revoke_access_grant(patient_profile_id: str, grant_id: str) -> None:
-    raw_grant_id = grant_id.replace("grt-", "").replace("grt_", "")
+    raw_grant_id = (
+        grant_id.replace("grt-", "")
+        .replace("grt_", "")
+        .replace("req-", "")
+        .replace("req_", "")
+    )
     raw_pat_id = patient_profile_id.replace("pat-", "").replace("pat_", "")
 
     with get_db() as conn:
-        res = conn.execute("""
-            UPDATE patient_access_grants
-            SET status = 'revoked', revoked_at = now()
+        grant = conn.execute("""
+            SELECT id, grantee_name, grantee_role, status
+            FROM patient_access_grants
             WHERE id::text = %s AND patient_id = %s
-        """, (raw_grant_id, raw_pat_id))
+        """, (raw_grant_id, raw_pat_id)).fetchone()
 
-        if res.rowcount == 0:
+        if not grant:
             raise APIProblemException(
                 status_code=status.HTTP_404_NOT_FOUND,
                 title="Grant Not Found",
                 detail=f"Access grant '{grant_id}' not found.",
                 code="RECORD_NOT_FOUND"
             )
+
+        conn.execute("""
+            UPDATE patient_access_grants
+            SET status = 'revoked', revoked_at = now()
+            WHERE id::text = %s AND patient_id = %s
+        """, (raw_grant_id, raw_pat_id))
+
+    grantee_name = grant["grantee_name"] if grant and grant.get("grantee_name") else "Doctor"
+    record_audit(
+        patient_profile_id=raw_pat_id,
+        actor_name="Patient",
+        actor_role="patient",
+        action="revoke",
+        description=f"Revoked access grant for {grantee_name}",
+        meta={"grantId": f"grt_{raw_grant_id}"}
+    )
 
 
 # --- Caregiver Management ---

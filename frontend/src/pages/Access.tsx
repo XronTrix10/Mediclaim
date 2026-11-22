@@ -19,6 +19,10 @@ export default function Access() {
   const now = useNow()
   const [caregiverOpen, setCaregiverOpen] = useState(false)
 
+  const activeGrants = grants.filter(
+    (g) => (g.grantStatus === 'active' || !g.grantStatus) && Date.parse(g.expiresAt) > now
+  )
+
   const [doctorId, setDoctorId] = useState('')
   const [scope, setScope] = useState<Kind[]>(['allergy', 'medication'])
   const [hours, setHours] = useState('2')
@@ -48,15 +52,15 @@ export default function Access() {
       <div className="mb-5 grid items-start gap-5 min-[1001px]:grid-cols-[minmax(0,7fr)_minmax(0,5fr)]">
         <div className="grid gap-5">
           <section className={card} aria-labelledby="active-h">
-            <CardHeader id="active-h" title="Active access" count={grants.length} />
-            {grants.length === 0 ? (
+            <CardHeader id="active-h" title="Active access" count={activeGrants.length} />
+            {activeGrants.length === 0 ? (
               <div className="grid justify-items-start gap-1.5 px-1 py-4 text-ink-soft">
                 <strong className="text-[1.05rem] font-semibold text-ink">No one has access right now</strong>
                 <p>Doctors you approve will show up here with the time they have left.</p>
               </div>
             ) : (
               <ul>
-                {grants.map((g) => (
+                {activeGrants.map((g) => (
                   <li key={g.id} className="grid grid-cols-[auto_minmax(0,1fr)] gap-x-3.5 gap-y-3 border-t border-line py-4 first:border-t-0 first:pt-0 last:pb-0 sm:grid-cols-[auto_minmax(0,1fr)_auto]">
                     <span className={avatar}>{initials(g.name)}</span>
                     <div className="min-w-0">

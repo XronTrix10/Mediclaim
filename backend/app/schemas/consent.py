@@ -33,6 +33,7 @@ class ApproveRequestInput(BaseModel):
 
 class AccessGrant(BaseModel):
     id: str
+    grantId: Optional[str] = None
     name: str
     role: str
     scope: List[KindType]

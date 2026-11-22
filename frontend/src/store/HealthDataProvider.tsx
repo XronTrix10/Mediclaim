@@ -257,12 +257,18 @@ function reducer(state: HealthState, action: Action): HealthState {
     case 'sample/toggle':
       return { ...state, sampleLoaded: !state.sampleLoaded }
     case 'grant/revoke': {
-      const g = state.grants.find((x) => x.id === action.id)
-      if (!g) return state
+      const cleanTarget = action.id.replace('grt_', '').replace('grt-', '').replace('req_', '').replace('req-', '')
+      const g = state.grants.find((x) => {
+        const cleanCurrent = x.id.replace('grt_', '').replace('grt-', '').replace('req_', '').replace('req-', '')
+        return x.id === action.id || (cleanTarget && cleanCurrent === cleanTarget)
+      })
       return {
         ...state,
-        grants: state.grants.filter((x) => x.id !== action.id),
-        audit: log(state, action.now, 'You', `revoked access for ${g.name}`, 'revoke'),
+        grants: state.grants.filter((x) => {
+          const cleanCurrent = x.id.replace('grt_', '').replace('grt-', '').replace('req_', '').replace('req-', '')
+          return x.id !== action.id && cleanCurrent !== cleanTarget
+        }),
+        audit: g ? log(state, action.now, 'You', `revoked access for ${g.name}`, 'revoke') : state.audit,
       }
     }
     case 'grant/expire': {
@@ -464,7 +470,11 @@ export default function HealthDataProvider({ children }: { children: ReactNode }
         }
 
         if (grantsRes.status === 'fulfilled' && grantsRes.value) {
-          patch.grants = grantsRes.value
+          patch.grants = grantsRes.value.filter(
+            (g: any) =>
+              (g.grantStatus === 'active' || !g.grantStatus) &&
+              Date.parse(g.expiresAt) > Date.now()
+          )
         }
 
         if (requestsRes.status === 'fulfilled' && requestsRes.value) {
@@ -498,6 +508,33 @@ export default function HealthDataProvider({ children }: { children: ReactNode }
     }
   }, [])
 
+  // Periodic background check to keep grants and requests in real-time sync with backend
+  useEffect(() => {
+    if (!authApi.isAuthenticated()) return
+    const interval = setInterval(() => {
+      Promise.allSettled([consentApi.getGrants('active'), consentApi.getRequests()])
+        .then(([gRes, rRes]) => {
+          const patch: Partial<HealthState> = {}
+          if (gRes.status === 'fulfilled' && gRes.value) {
+            patch.grants = gRes.value.filter(
+              (g: any) =>
+                (g.grantStatus === 'active' || !g.grantStatus) &&
+                Date.parse(g.expiresAt) > Date.now()
+            )
+          }
+          if (rRes.status === 'fulfilled' && rRes.value) {
+            patch.requests = rRes.value
+          }
+          if (Object.keys(patch).length > 0) {
+            dispatch({ type: 'state/hydrated', payload: patch })
+          }
+        })
+        .catch(() => {})
+    }, 10000)
+
+    return () => clearInterval(interval)
+  }, [])
+
   // End each access grant the moment its time is up
   const nextExpiry = useMemo(
     () => state.grants.reduce((min, g) => Math.min(min, Date.parse(g.expiresAt)), Infinity),
@@ -515,10 +552,12 @@ export default function HealthDataProvider({ children }: { children: ReactNode }
       refreshData: async () => {
         if (!authApi.isAuthenticated()) return
         try {
-          const [recordsRes, prescriptionsRes, auditRes] = await Promise.allSettled([
+          const [recordsRes, prescriptionsRes, auditRes, grantsRes, requestsRes] = await Promise.allSettled([
             recordsApi.getRecords(),
             recordsApi.getPrescriptions(),
             auditApi.getAuditLogs(),
+            consentApi.getGrants('active'),
+            consentApi.getRequests(),
           ])
           const patch: Partial<HealthState> = {}
           if (recordsRes.status === 'fulfilled' && recordsRes.value) {
@@ -529,6 +568,16 @@ export default function HealthDataProvider({ children }: { children: ReactNode }
           }
           if (auditRes.status === 'fulfilled' && auditRes.value && auditRes.value.length > 0) {
             patch.audit = auditRes.value
+          }
+          if (grantsRes.status === 'fulfilled' && grantsRes.value) {
+            patch.grants = grantsRes.value.filter(
+              (g: any) =>
+                (g.grantStatus === 'active' || !g.grantStatus) &&
+                Date.parse(g.expiresAt) > Date.now()
+            )
+          }
+          if (requestsRes.status === 'fulfilled' && requestsRes.value) {
+            patch.requests = requestsRes.value
           }
           if (Object.keys(patch).length > 0) {
             dispatch({ type: 'state/hydrated', payload: patch })
@@ -773,6 +822,24 @@ export default function HealthDataProvider({ children }: { children: ReactNode }
         if (authApi.isAuthenticated()) {
           try {
             await consentApi.revokeGrant(id)
+            const [grantsRes, auditRes] = await Promise.allSettled([
+              consentApi.getGrants('active'),
+              auditApi.getAuditLogs(),
+            ])
+            const patch: Partial<HealthState> = {}
+            if (grantsRes.status === 'fulfilled' && grantsRes.value) {
+              patch.grants = grantsRes.value.filter(
+                (g: any) =>
+                  (g.grantStatus === 'active' || !g.grantStatus) &&
+                  Date.parse(g.expiresAt) > Date.now()
+              )
+            }
+            if (auditRes.status === 'fulfilled' && auditRes.value) {
+              patch.audit = auditRes.value
+            }
+            if (Object.keys(patch).length > 0) {
+              dispatch({ type: 'state/hydrated', payload: patch })
+            }
           } catch (e) {
             console.warn('Backend revoke grant sync failed:', e)
           }
@@ -781,17 +848,33 @@ export default function HealthDataProvider({ children }: { children: ReactNode }
 
       giveAccess: (input: GiveAccessInput) => {
         const now = Date.now()
+        const tempId = uid('g')
         const grant: AccessGrant = {
-          id: uid('g'),
+          id: tempId,
           name: input.name,
           role: input.role ?? 'Added by ID',
           scope: input.scope,
+          grantStatus: 'active',
           validFrom: new Date(now).toISOString(),
           expiresAt: new Date(now + input.hours * 3_600_000).toISOString(),
         }
         dispatch({ type: 'grant/give', grant, now })
         if (authApi.isAuthenticated()) {
-          consentApi.giveAccess(input).catch((e) => console.warn('Backend give access sync failed:', e))
+          consentApi.giveAccess(input)
+            .then((res) => {
+              const realId = res.id || (res as any).grantId
+              if (realId) {
+                dispatch({
+                  type: 'state/hydrated',
+                  payload: {
+                    grants: stateRef.current.grants.map((g) =>
+                      g.id === tempId ? { ...g, id: realId, expiresAt: res.expiresAt || g.expiresAt } : g
+                    ),
+                  },
+                })
+              }
+            })
+            .catch((e) => console.warn('Backend give access sync failed:', e))
         }
         return grant
       },
@@ -799,15 +882,37 @@ export default function HealthDataProvider({ children }: { children: ReactNode }
       approveRequest: async (id) => {
         const now = Date.now()
         const req = stateRef.current.requests.find((r) => r.id === id)
-        const grantId = uid('g')
-        dispatch({ type: 'request/approve', id, grantId, now })
-        if (authApi.isAuthenticated() && req) {
+        if (!req) return
+        if (authApi.isAuthenticated()) {
           try {
-            await consentApi.approveRequest(id, req.scope, req.durationHours)
+            const res = await consentApi.approveRequest(id, req.scope, req.durationHours)
+            const realId = res.id || (res as any).grantId || id
+            const newGrant: AccessGrant = {
+              id: realId,
+              name: req.name,
+              role: req.role,
+              scope: req.scope,
+              grantStatus: 'active',
+              validFrom: res.validFrom || new Date(now).toISOString(),
+              expiresAt: res.expiresAt || new Date(now + req.durationHours * 3_600_000).toISOString(),
+            }
+            dispatch({
+              type: 'state/hydrated',
+              payload: {
+                requests: stateRef.current.requests.filter((r) => r.id !== id),
+                grants: [
+                  ...stateRef.current.grants.filter((g) => g.id !== id && g.id !== realId),
+                  newGrant,
+                ],
+              },
+            })
+            return
           } catch (e) {
             console.warn('Backend approve request sync failed:', e)
           }
         }
+        const grantId = id.startsWith('req_') ? id.replace('req_', 'grt_') : id
+        dispatch({ type: 'request/approve', id, grantId, now })
       },
 
       declineRequest: async (id) => {

@@ -33,6 +33,9 @@ export default function Dashboard() {
   const [manualModalOpen, setManualModalOpen] = useState(false)
   const [manualInitialKind, setManualInitialKind] = useState<Kind>('vaccination')
   const allergies = events.filter((e) => e.kind === 'allergy')
+  const activeGrants = grants.filter(
+    (g) => (g.grantStatus === 'active' || !g.grantStatus) && Date.parse(g.expiresAt) > Date.now()
+  )
 
   const openManualEntry = (kind: Kind = 'vaccination') => {
     setManualInitialKind(kind)
@@ -118,7 +121,7 @@ export default function Dashboard() {
               />
             </div>
             <div className="order-2 min-[1080px]:order-none">
-              <ActiveAccessCard grants={grants} onRevoke={actions.revokeGrant} />
+              <ActiveAccessCard grants={activeGrants} onRevoke={actions.revokeGrant} />
             </div>
           </div>
         </div>

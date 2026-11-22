@@ -292,6 +292,7 @@ def commit_document_records(
 @router.get("/documents/{id}/content")
 def download_document_content(
     id: str,
+    download: bool = Query(False, description="Whether attachment download is requested"),
     current_user: AuthenticatedUser = Depends(get_current_user),
 ):
     raw_doc_id = id.replace("doc-", "").replace("doc_", "")
@@ -325,13 +326,29 @@ def download_document_content(
             code="FORBIDDEN",
         )
 
+    # Restrict practitioners from downloading patient files directly (preview access only)
+    if download and not is_owner and not current_user.has_role("admin"):
+        raise APIProblemException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            title="Download Restricted",
+            detail="Practitioners are restricted from downloading patient documents. Preview access only.",
+            code="DOWNLOAD_RESTRICTED",
+        )
+
     stored_bytes = read_document_bytes(doc.get("storage_key") or "")
     content = stored_bytes if stored_bytes is not None else b"%PDF-1.4 Simulated Decrypted Medical Record Binary Content\n%%EOF"
+
+    disposition_type = "attachment" if (download and (is_owner or current_user.has_role("admin"))) else "inline"
+
+    headers = {
+        "Cache-Control": "no-store, no-cache, must-revalidate",
+        "Pragma": "no-cache",
+        "X-Content-Type-Options": "nosniff",
+        "Content-Disposition": f"{disposition_type}; filename={doc.get('original_filename') or 'document.pdf'}",
+    }
+
     return Response(
         content=content,
         media_type=doc.get("mime_type") or "application/pdf",
-        headers={
-            "Cache-Control": "no-store",
-            "Content-Disposition": f"inline; filename={doc.get('original_filename') or 'document.pdf'}",
-        },
+        headers=headers,
     )

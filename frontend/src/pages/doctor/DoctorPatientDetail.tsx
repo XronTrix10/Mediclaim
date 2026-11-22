@@ -189,19 +189,10 @@ function DocumentCard({ doc, onPreview }: { doc: PatientDocument; onPreview: (it
           <Icon name="file" size={14} />
           <span>Preview</span>
         </button>
-        {doc.fileUrl && (
-          <a
-            href={doc.fileUrl}
-            target="_blank"
-            rel="noopener noreferrer"
-            download={doc.fileName || 'document'}
-            onClick={(e) => e.stopPropagation()}
-            className={`${button('ghost', 'sm')} gap-1`}
-            title="Download document"
-          >
-            <Icon name="download" size={14} />
-          </a>
-        )}
+        <span className="inline-flex items-center gap-1 text-[0.72rem] text-ink-faint bg-mist px-2 py-0.5 rounded font-medium">
+          <Icon name="shield" size={11} />
+          Preview Only
+        </span>
       </div>
     </div>
   )
@@ -476,21 +467,16 @@ export default function DoctorPatientDetail() {
                   <span className="text-xs uppercase font-semibold tracking-wider text-ink-faint">
                     Attached Medical Document
                   </span>
-                  <a
-                    href={previewItem.fileUrl}
-                    target="_blank"
-                    rel="noopener noreferrer"
-                    download={previewItem.fileName || 'medical_document'}
-                    className={`${button('soft', 'sm')} gap-1`}
-                  >
-                    <Icon name="download" size={14} />
-                    Download File
-                  </a>
+                  <span className="inline-flex items-center gap-1.5 rounded-full bg-mist px-2.5 py-1 text-xs font-medium text-ink-soft">
+                    <Icon name="shield" size={13} className="text-brand-deep" />
+                    Preview Only (Downloads Restricted)
+                  </span>
                 </div>
                 <AuthenticatedFilePreview
                   fileUrl={previewItem.fileUrl}
                   fileName={previewItem.fileName}
                   fileType={previewItem.fileType}
+                  readOnly={true}
                 />
               </div>
             ) : (

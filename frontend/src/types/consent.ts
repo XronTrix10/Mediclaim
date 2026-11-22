@@ -2,12 +2,14 @@ import type { Kind } from './record'
 
 export interface AccessGrant {
   id: string
+  grantId?: string
   name: string
   role: string
   scope: Kind[]
   /** ISO 8601 UTC. The remaining time is always computed from this. */
   expiresAt: string
   validFrom?: string
+  grantStatus?: 'active' | 'expired' | 'revoked' | string
 }
 
 export interface AccessRequest {

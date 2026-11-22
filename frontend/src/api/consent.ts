@@ -19,8 +19,8 @@ export const consentApi = {
     await api.post(`/consent/requests/${id}/decline`, {})
   },
 
-  async getGrants(): Promise<AccessGrant[]> {
-    const res = await api.get<{ status: string; data: AccessGrant[] }>('/consent/grants')
+  async getGrants(status: string = 'active'): Promise<AccessGrant[]> {
+    const res = await api.get<{ status: string; data: AccessGrant[] }>(`/consent/grants?status=${encodeURIComponent(status)}`)
     return res.data
   },
 
