@@ -28,7 +28,7 @@ def register(payload: RegisterRequest):
     data = register_user(payload)
     return {
         "status": "success",
-        "message": "Account created. Verification OTP dispatched.",
+        "message": "Account created. Verification OTP dispatched and your Mediclaim ID has been emailed.",
         "data": data,
         "meta": _make_meta(),
     }

@@ -18,6 +18,7 @@ export interface UserSummary {
 export interface RegisterResult {
   userId: string
   phone: string
+  email?: string | null
   accountStatus: string
   otpSent: boolean
   otpExpiresInSeconds: number
@@ -52,6 +53,7 @@ export interface RequestOtpResult {
 export const authApi = {
   async register(payload: {
     fullName: string
+    email: string
     dateOfBirth: string
     phone: string
     aadhaarNumber: string

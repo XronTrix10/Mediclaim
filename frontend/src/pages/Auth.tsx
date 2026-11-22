@@ -159,6 +159,7 @@ function PatientLoginForm({ onSwitch, onSuccess }: FormProps) {
 // ─── PATIENT REGISTER ──────────────────────────────────────────
 function PatientRegisterForm({ onSwitch }: FormProps) {
   const [fullName, setFullName] = useState('')
+  const [email, setEmail] = useState('')
   const [dateOfBirth, setDateOfBirth] = useState('')
   const [phone, setPhone] = useState('')
   const [aadhaarNumber, setAadhaarNumber] = useState('')
@@ -177,7 +178,14 @@ function PatientRegisterForm({ onSwitch }: FormProps) {
     if (!formattedPhone.startsWith('+')) formattedPhone = `+91${formattedPhone.replace(/^0+/, '')}`
     setLoading(true)
     try {
-      const res = await authApi.register({ fullName: fullName.trim(), dateOfBirth, phone: formattedPhone, aadhaarNumber: aadhaarNumber.replace(/\s+/g, ''), password })
+      const res = await authApi.register({
+        fullName: fullName.trim(),
+        email: email.trim(),
+        dateOfBirth,
+        phone: formattedPhone,
+        aadhaarNumber: aadhaarNumber.replace(/\s+/g, ''),
+        password,
+      })
       setPendingUserId(res.userId)
       if (res.debugOtp) setDebugOtp(res.debugOtp)
     } catch (err: any) {
@@ -239,6 +247,7 @@ function PatientRegisterForm({ onSwitch }: FormProps) {
       <ErrorBanner msg={error} />
       <form className="mt-7 grid gap-4.5" onSubmit={handleRegister}>
         <Field label="Full name" htmlFor="name"><input id="name" className={input} autoComplete="name" value={fullName} onChange={(e) => setFullName(e.target.value)} placeholder="Aarav Sharma" required /></Field>
+        <Field label="Email address" htmlFor="email" hint="Your Mediclaim ID will be sent here upon approval."><input id="email" type="email" className={input} autoComplete="email" value={email} onChange={(e) => setEmail(e.target.value)} placeholder="aarav.sharma@example.com" required /></Field>
         <div className="grid gap-4.5 sm:grid-cols-2">
           <Field label="Date of birth" htmlFor="dob"><input id="dob" type="date" className={input} autoComplete="bday" value={dateOfBirth} onChange={(e) => setDateOfBirth(e.target.value)} required /></Field>
           <Field label="Mobile number" htmlFor="phone"><input id="phone" type="tel" className={input} autoComplete="tel" placeholder="+91 98765 43210" value={phone} onChange={(e) => setPhone(e.target.value)} required /></Field>

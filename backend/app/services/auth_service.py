@@ -14,6 +14,7 @@ from app.security import (
     generate_mediclaim_id, create_access_token,
     normalize_doctor_id, normalize_hospital_id
 )
+from app.services.email_service import send_registration_email
 
 logger = logging.getLogger("mediclaim.auth")
 
@@ -51,13 +52,21 @@ def register_user(payload) -> Dict[str, Any]:
     otp = generate_otp()
     user_uuid = uuid.uuid4()
     user_id = f"usr_{user_uuid}"
+    email_clean = str(payload.email).strip().lower()
 
     with get_db() as conn:
         duplicate = conn.execute(
-            "SELECT phone, aadhaar_number FROM users WHERE phone = %s OR aadhaar_number = %s",
-            (payload.phone, payload.aadhaarNumber)
+            "SELECT phone, aadhaar_number, email FROM users WHERE phone = %s OR aadhaar_number = %s OR email = %s",
+            (payload.phone, payload.aadhaarNumber, email_clean)
         ).fetchone()
         if duplicate:
+            if duplicate.get("email") and duplicate.get("email").lower() == email_clean:
+                raise APIProblemException(
+                    status_code=status.HTTP_409_CONFLICT,
+                    title="Account Already Exists",
+                    detail="An account with this email address already exists.",
+                    code="ACCOUNT_ALREADY_EXISTS"
+                )
             raise APIProblemException(
                 status_code=status.HTTP_409_CONFLICT,
                 title="Account Already Exists",
@@ -67,20 +76,20 @@ def register_user(payload) -> Dict[str, Any]:
 
         mediclaim_id = _get_unique_mediclaim_id(conn)
 
-        # Insert user into users table
+        # Insert user into users table with normalized email
         conn.execute("""
             INSERT INTO users (
-                id, public_id, mediclaim_id, full_name, phone, aadhaar_number,
+                id, public_id, mediclaim_id, full_name, email, phone, aadhaar_number,
                 password_hash, admin_verified, profile_complete,
                 otp_hash, otp_expires_at, otp_attempts, is_active, created_at, updated_at
             ) VALUES (
-                %s, %s, %s, %s, %s, %s,
+                %s, %s, %s, %s, %s, %s, %s,
                 %s, false, false,
                 %s, %s, 0, true, now(), now()
             )
         """, (
             str(user_uuid), mediclaim_id, mediclaim_id, payload.fullName,
-            payload.phone, payload.aadhaarNumber,
+            email_clean, payload.phone, payload.aadhaarNumber,
             hash_password(payload.password), hash_otp(otp), now + OTP_SECONDS
         ))
 
@@ -107,9 +116,26 @@ def register_user(payload) -> Dict[str, Any]:
         logger.info("[DEV ONLY] Registration OTP for %s: %s | Mediclaim ID: %s", payload.phone, otp, formatted_mediclaim_id)
         print(f"[DEV ONLY] Registration OTP for {payload.phone}: {otp} | Mediclaim ID: {formatted_mediclaim_id}")
 
+    # Send generated Mediclaim ID to the registered email after database transaction commits.
+    # Email failure must not roll back or interrupt successful patient registration.
+    try:
+        send_registration_email(
+            to_email=email_clean,
+            recipient_name=payload.fullName,
+            mediclaim_id=formatted_mediclaim_id
+        )
+    except Exception as exc:
+        logger.error(
+            "Unexpected error dispatching registration email to %s: %s",
+            email_clean,
+            exc,
+            exc_info=True
+        )
+
     return {
         "userId": user_id,
         "phone": payload.phone,
+        "email": email_clean,
         "accountStatus": "pending_otp",
         "otpSent": True,
         "otpExpiresInSeconds": OTP_SECONDS,
