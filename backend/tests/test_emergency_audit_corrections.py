@@ -186,6 +186,37 @@ class TestEmergencyAuditCorrections(unittest.TestCase):
         self.assertIsNotNone(found_corr)
         self.assertEqual(found_corr["patientName"], "Patient Emergency Test")
 
+        # 3c. Patient submits correction on a seed/demo record (e.g. alg-01)
+        seed_corr_res = request_correction(CorrectionRequestInput(
+            recordId="alg-01",
+            recordTitle="Penicillin",
+            reason="Reaction was mild rash, not severe bronchospasm.",
+            proposed="Mild rash"
+        ), current_user=self.patient_user)
+        self.assertEqual(seed_corr_res["status"], "success")
+        seed_corr_id = seed_corr_res["data"]["id"]
+
+        # 3d. Admin lists corrections across platform
+        admin_user = AuthenticatedUser(
+            id="usr_admin_test",
+            raw_uuid="00000000-0000-0000-0000-000000000001",
+            public_id="ADM000000001",
+            mediclaim_id="adm123456789",
+            full_name="Chief Admin",
+            email="admin@mediclaim.gov.in",
+            phone="+919999999999",
+            roles=["admin"],
+            is_active=True,
+            admin_verified=True,
+            profile_complete=True
+        )
+        admin_corr_list = get_my_corrections(current_user=admin_user)
+        self.assertGreaterEqual(len(admin_corr_list["data"]), 2)
+        admin_found_seed = next((c for c in admin_corr_list["data"] if c["id"] == seed_corr_id), None)
+        self.assertIsNotNone(admin_found_seed)
+        self.assertEqual(admin_found_seed["recordTitle"], "Penicillin")
+        self.assertEqual(admin_found_seed["patientName"], "Patient Emergency Test")
+
         # 4. Doctor reviews and approves correction
         review_res = review_patient_correction(
             id=corr_id,

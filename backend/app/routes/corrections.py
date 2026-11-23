@@ -27,12 +27,18 @@ def _make_meta(total: Optional[int] = None) -> EnvelopeMeta:
 
 def _get_patient_id(user: AuthenticatedUser) -> str:
     if not user.patient_profile_id:
-        raise APIProblemException(
-            status_code=status.HTTP_403_FORBIDDEN,
-            title="Profile Incomplete",
-            detail="User does not have an active patient profile.",
-            code="PROFILE_INCOMPLETE"
-        )
+        from app.database import get_db
+        with get_db() as conn:
+            p_row = conn.execute("SELECT id FROM patient_profiles WHERE user_id = %s", (user.raw_uuid,)).fetchone()
+            if p_row:
+                return str(p_row["id"])
+            new_p_id = uuid.uuid4()
+            pub_id = f"pat{new_p_id.hex[:9]}"
+            conn.execute("""
+                INSERT INTO patient_profiles (id, public_id, user_id, created_at, updated_at)
+                VALUES (%s, %s, %s, now(), now())
+            """, (str(new_p_id), pub_id, user.raw_uuid))
+            return str(new_p_id)
     return user.patient_profile_id
 
 

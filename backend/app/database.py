@@ -214,6 +214,7 @@ def init_db() -> None:
         conn.execute("ALTER TABLE record_correction_requests ADD COLUMN IF NOT EXISTS proposed_text text;")
         conn.execute("ALTER TABLE record_correction_requests ADD COLUMN IF NOT EXISTS review_notes text;")
         conn.execute("ALTER TABLE record_correction_requests ALTER COLUMN requested_by DROP NOT NULL;")
+        conn.execute("ALTER TABLE record_correction_requests ALTER COLUMN clinical_record_id DROP NOT NULL;")
         conn.execute("ALTER TABLE record_correction_requests DROP CONSTRAINT IF EXISTS record_correction_requests_requested_by_fkey;")
         conn.execute("ALTER TABLE record_correction_requests ADD CONSTRAINT record_correction_requests_requested_by_fkey FOREIGN KEY (requested_by) REFERENCES users(id) ON DELETE SET NULL;")
         conn.execute("ALTER TABLE record_correction_requests DROP CONSTRAINT IF EXISTS record_correction_requests_reviewed_by_fkey;")

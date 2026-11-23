@@ -186,6 +186,12 @@ export default function AdminOverview() {
           label="Emergency Events"
           description="Audit log of break-glass accesses"
         />
+        <QuickLink
+          to="/admin/corrections"
+          icon="file"
+          label="Record Corrections"
+          description="Oversight of patient record amendment requests"
+        />
       </div>
     </div>
   )

@@ -564,12 +564,13 @@ export default function HealthDataProvider({ children }: { children: ReactNode }
       refreshData: async () => {
         if (!authApi.isAuthenticated()) return
         try {
-          const [recordsRes, prescriptionsRes, auditRes, grantsRes, requestsRes] = await Promise.allSettled([
+          const [recordsRes, prescriptionsRes, auditRes, grantsRes, requestsRes, correctionsRes] = await Promise.allSettled([
             recordsApi.getRecords(),
             recordsApi.getPrescriptions(),
             auditApi.getAuditLogs(),
             consentApi.getGrants('active'),
             consentApi.getRequests(),
+            correctionsApi.getCorrections(),
           ])
           const patch: Partial<HealthState> = {}
           if (recordsRes.status === 'fulfilled' && recordsRes.value) {
@@ -580,6 +581,9 @@ export default function HealthDataProvider({ children }: { children: ReactNode }
           }
           if (auditRes.status === 'fulfilled' && auditRes.value && auditRes.value.length > 0) {
             patch.audit = auditRes.value
+          }
+          if (correctionsRes.status === 'fulfilled' && correctionsRes.value) {
+            patch.corrections = correctionsRes.value
           }
           if (grantsRes.status === 'fulfilled' && grantsRes.value) {
             patch.grants = grantsRes.value.filter(
@@ -963,15 +967,19 @@ export default function HealthDataProvider({ children }: { children: ReactNode }
       },
 
       requestCorrection: async (input) => {
-        const corrId = uid('corr')
-        dispatch({ type: 'correction/add', id: corrId, now: Date.now(), ...input })
+        let corrId = uid('corr')
         if (authApi.isAuthenticated()) {
           try {
-            await correctionsApi.requestCorrection(input)
+            const saved = await correctionsApi.requestCorrection(input)
+            if (saved?.id) {
+              corrId = saved.id
+            }
           } catch (e) {
             console.warn('Backend request correction sync failed:', e)
+            throw e
           }
         }
+        dispatch({ type: 'correction/add', id: corrId, now: Date.now(), ...input })
       },
     }),
     [],
