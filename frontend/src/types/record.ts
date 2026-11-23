@@ -132,6 +132,12 @@ export interface CorrectionRequest {
   recordTitle: string
   reason: string
   proposed?: string
-  status: 'under_review'
+  status: 'under_review' | 'approved' | 'rejected'
   createdAt: string
+  reviewedAt?: string
+  reviewNotes?: string
+  patientId?: string
+  patientName?: string
+  patientMediclaimId?: string
+  requestedByName?: string
 }

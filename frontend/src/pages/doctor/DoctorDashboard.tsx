@@ -4,6 +4,8 @@ import Icon from '../../components/Icon'
 import type { IconName } from '../../components/Icon'
 import { card, button } from '../../lib/ui'
 import { authApi } from '../../api/auth'
+import { correctionsApi } from '../../api/corrections'
+import type { CorrectionRequest } from '../../types'
 import {
   getAuthorizedPatients,
   getDoctorAccessRequests,
@@ -62,6 +64,7 @@ export default function DoctorDashboard() {
   const user = authApi.getCurrentUser()
   const [patients, setPatients] = useState<DoctorPatientSummary[]>([])
   const [requests, setRequests] = useState<DoctorAccessRequestItem[]>([])
+  const [pendingCorrections, setPendingCorrections] = useState<CorrectionRequest[]>([])
   const [loading, setLoading] = useState(true)
 
   useEffect(() => {
@@ -69,9 +72,11 @@ export default function DoctorDashboard() {
     Promise.all([
       getAuthorizedPatients().catch(() => [] as DoctorPatientSummary[]),
       getDoctorAccessRequests('all').catch(() => [] as DoctorAccessRequestItem[]),
-    ]).then(([p, r]) => {
+      correctionsApi.getCorrections({ status: 'under_review' }).catch(() => [] as CorrectionRequest[]),
+    ]).then(([p, r, c]) => {
       setPatients(p)
       setRequests(r)
+      setPendingCorrections(c)
     }).finally(() => setLoading(false))
   }, [])
 
@@ -101,16 +106,72 @@ export default function DoctorDashboard() {
         <StatCard icon="users" value={loading ? '—' : patients.length} label="Active Patients" note="Patients with active consent" tint="bg-brand-tint" iconColor="text-brand" />
         <StatCard icon="clock" value={loading ? '—' : pending.length} label="Pending Requests" note="Awaiting patient approval" tint="bg-[#fff3cd]" iconColor="text-[#856404]" />
         <StatCard icon="shield" value={loading ? '—' : requests.filter((r) => r.status === 'approved' || r.status === 'active').length} label="Approved Grants" note="Total active access grants" tint="bg-mist" iconColor="text-brand-deep" />
-        <StatCard icon="stethoscope" value={loading ? '—' : requests.length} label="Total Requests" note="All access requests sent" tint="bg-mist" iconColor="text-ink-soft" />
+        <StatCard icon="file" value={loading ? '—' : pendingCorrections.length} label="Pending Corrections" note="Patient record amendments" tint={pendingCorrections.length > 0 ? 'bg-amber-100/70 border border-amber-300' : 'bg-mist'} iconColor={pendingCorrections.length > 0 ? 'text-amber-800' : 'text-ink-soft'} />
       </div>
+
+      {/* Pending Corrections Alert */}
+      {pendingCorrections.length > 0 && (
+        <div className="rounded-2xl border border-amber-300 bg-amber-50 p-4 sm:p-5 text-amber-950">
+          <div className="flex flex-wrap items-center justify-between gap-4">
+            <div className="flex items-center gap-3">
+              <div className="grid size-10 place-items-center rounded-xl bg-amber-600 text-white shrink-0">
+                <Icon name="alert" size={20} />
+              </div>
+              <div>
+                <h3 className="text-sm font-bold text-amber-950">
+                  {pendingCorrections.length} Patient Record Correction{pendingCorrections.length > 1 ? 's' : ''} Awaiting Review
+                </h3>
+                <p className="text-xs text-amber-900 mt-0.5">
+                  Patients have submitted amendments to their medical history for clinician verification.
+                </p>
+              </div>
+            </div>
+          </div>
+          <div className="mt-4 grid gap-3 sm:grid-cols-2 lg:grid-cols-3">
+            {pendingCorrections.slice(0, 3).map((c) => (
+              <div key={c.id} className="rounded-xl bg-white border border-amber-200 p-3 shadow-xs text-xs">
+                <div className="flex justify-between items-start mb-1">
+                  <strong className="text-ink truncate">{c.recordTitle}</strong>
+                  <span className="text-[10px] bg-amber-100 text-amber-800 font-semibold px-2 py-0.5 rounded-full">Pending</span>
+                </div>
+                <p className="text-ink-soft truncate">Patient: <span className="font-semibold text-ink">{c.patientName}</span> ({c.patientMediclaimId})</p>
+                <p className="text-ink-soft line-clamp-2 mt-1">Reason: "{c.reason}"</p>
+                {c.patientMediclaimId && (
+                  <Link
+                    to={`/app/doctor/patients/${c.patientMediclaimId.replace(/\s+/g, '')}`}
+                    className="mt-2.5 inline-flex items-center gap-1 font-semibold text-brand hover:underline"
+                  >
+                    Go to Patient &rarr;
+                  </Link>
+                )}
+              </div>
+            ))}
+          </div>
+        </div>
+      )}
 
       {/* Quick actions */}
       <div className={card}>
-        <h2 className="mb-4 text-[1.1rem] font-semibold text-ink">Quick Actions</h2>
-        <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-3">
+        <div className="mb-4 flex flex-wrap items-center justify-between gap-2">
+          <h2 className="text-[1.1rem] font-semibold text-ink">Quick Actions</h2>
+          <Link
+            to="/app/doctor/request-access?mode=emergency"
+            className="inline-flex items-center gap-1.5 rounded-full border border-amber-300 bg-amber-50 px-3 py-1 text-xs font-bold text-amber-900 transition hover:bg-amber-100"
+          >
+            <Icon name="alert" size={14} />
+            Emergency Break-Glass
+          </Link>
+        </div>
+        <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-4">
           <Link to="/app/doctor/request-access" className={`${button('soft', 'md')} justify-start gap-3 rounded-2xl px-4 py-3`}>
             <Icon name="search" size={18} />
-            Search & Request Patient Access
+            Request Consent
+          </Link>
+          <Link to="/app/doctor/request-access?mode=emergency" className="flex items-center gap-3 rounded-2xl border border-amber-300 bg-amber-50/70 px-4 py-3 text-amber-950 transition hover:bg-amber-100">
+            <span className="grid size-7 place-items-center rounded-lg bg-amber-600 text-white shrink-0">
+              <Icon name="alert" size={14} />
+            </span>
+            <span className="text-sm font-semibold">Break-Glass Override</span>
           </Link>
           <Link to="/app/doctor/patients" className={`${button('ghost', 'md')} justify-start gap-3 rounded-2xl px-4 py-3`}>
             <Icon name="users" size={18} />

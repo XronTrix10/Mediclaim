@@ -8,8 +8,8 @@ from app.schemas.corrections import (
     CorrectionRequestsResponse, CorrectionDetailResponse
 )
 from app.services.corrections_service import (
-    create_correction, list_corrections, get_correction_by_id,
-    review_correction, withdraw_correction, get_record_history
+    create_correction, list_corrections, list_doctor_corrections, list_admin_corrections,
+    get_correction_by_id, review_correction, withdraw_correction, get_record_history
 )
 from app.security import get_current_user, AuthenticatedUser
 from app.exceptions import APIProblemException
@@ -52,9 +52,24 @@ def request_correction(
 
 
 @router.get("", response_model=CorrectionRequestsResponse, status_code=status.HTTP_200_OK)
-def get_my_corrections(current_user: AuthenticatedUser = Depends(get_current_user)):
-    pat_id = _get_patient_id(current_user)
-    corrections = list_corrections(pat_id)
+def get_my_corrections(
+    status: Optional[str] = None,
+    patientMediclaimId: Optional[str] = None,
+    current_user: AuthenticatedUser = Depends(get_current_user),
+):
+    if current_user.has_role("admin"):
+        corrections = list_admin_corrections(status_filter=status, patient_mediclaim_id=patientMediclaimId)
+    elif current_user.has_role("practitioner", "doctor", "hospital_admin") or current_user.practitioner_profile_id:
+        corrections = list_doctor_corrections(current_user, status_filter=status, patient_mediclaim_id=patientMediclaimId)
+    elif current_user.patient_profile_id:
+        corrections = list_corrections(current_user.patient_profile_id)
+    else:
+        raise APIProblemException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            title="Profile Incomplete",
+            detail="User does not have an active profile or role.",
+            code="PROFILE_INCOMPLETE"
+        )
     return {
         "status": "success",
         "data": corrections,

@@ -19,6 +19,7 @@ const navItems: NavItem[] = [
   { to: '/admin/organizations', label: 'Organizations', icon: 'stethoscope' },
   { to: '/admin/practitioners', label: 'Practitioners', icon: 'user' },
   { to: '/admin/emergency', label: 'Emergency Events', icon: 'alert' },
+  { to: '/admin/corrections', label: 'Corrections', icon: 'file' },
 ]
 
 export default function AdminSidebar() {

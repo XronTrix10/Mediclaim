@@ -174,10 +174,17 @@ class TestEmergencyAuditCorrections(unittest.TestCase):
         self.assertEqual(corr_res["status"], "success")
         corr_id = corr_res["data"]["id"]
 
-        # 3. List corrections
+        # 3. List corrections (Patient view)
         corr_list = get_my_corrections(current_user=self.patient_user)
         self.assertEqual(len(corr_list["data"]), 1)
         self.assertEqual(corr_list["data"][0]["recordTitle"], "Asthma")
+
+        # 3b. List corrections (Doctor view)
+        doc_corr_list = get_my_corrections(current_user=self.doctor_user)
+        self.assertGreaterEqual(len(doc_corr_list["data"]), 1)
+        found_corr = next((c for c in doc_corr_list["data"] if c["id"] == corr_id), None)
+        self.assertIsNotNone(found_corr)
+        self.assertEqual(found_corr["patientName"], "Patient Emergency Test")
 
         # 4. Doctor reviews and approves correction
         review_res = review_patient_correction(

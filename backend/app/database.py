@@ -189,6 +189,13 @@ def init_db() -> None:
         conn.execute("ALTER TABLE patient_access_grants ADD COLUMN IF NOT EXISTS duration_hours integer;")
         # Allow grantee_user_id to be nullable if direct grant by name/role
         conn.execute("ALTER TABLE patient_access_grants ALTER COLUMN valid_from DROP NOT NULL;")
+        conn.execute("ALTER TABLE patient_access_grants DROP CONSTRAINT IF EXISTS patient_access_grants_check;")
+        conn.execute("ALTER TABLE patient_access_grants DROP CONSTRAINT IF EXISTS patient_access_grants_grantee_check;")
+        conn.execute("""
+            ALTER TABLE patient_access_grants
+            ADD CONSTRAINT patient_access_grants_grantee_check
+            CHECK (grantee_user_id IS NOT NULL OR organization_id IS NOT NULL OR grantee_name IS NOT NULL);
+        """)
 
         # Audit and corrections extensions
         conn.execute("ALTER TABLE audit_events DROP CONSTRAINT IF EXISTS audit_events_check;")

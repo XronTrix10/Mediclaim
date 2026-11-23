@@ -5,7 +5,7 @@ from typing import Any, Dict, List, Optional
 from fastapi import status
 from app.database import get_db
 from app.exceptions import APIProblemException
-from app.security import AuthenticatedUser
+from app.security import AuthenticatedUser, normalize_mediclaim_id, format_mediclaim_id
 
 
 def _format_iso(dt: Optional[datetime]) -> Optional[str]:
@@ -88,6 +88,73 @@ def list_corrections(patient_profile_id: str) -> List[Dict[str, Any]]:
             "reviewNotes": r.get("review_notes"),
         })
     return corrections
+
+
+def list_doctor_corrections(
+    doctor_user: Optional[AuthenticatedUser] = None,
+    status_filter: Optional[str] = None,
+    patient_mediclaim_id: Optional[str] = None
+) -> List[Dict[str, Any]]:
+    where_clauses = []
+    params: List[Any] = []
+
+    if patient_mediclaim_id:
+        clean_mid = normalize_mediclaim_id(patient_mediclaim_id)
+        where_clauses.append("(u_pat.mediclaim_id = %s OR u_pat.public_id = %s)")
+        params.extend([clean_mid, clean_mid])
+
+    if status_filter:
+        where_clauses.append("c.status = %s")
+        params.append(status_filter)
+
+    where_sql = ""
+    if where_clauses:
+        where_sql = "WHERE " + " AND ".join(where_clauses)
+
+    query = f"""
+        SELECT c.*, cr.title AS actual_record_title,
+               p.id AS pat_profile_id,
+               u_pat.full_name AS patient_name,
+               u_pat.mediclaim_id AS patient_mediclaim_id,
+               u_req.full_name AS requester_name
+        FROM record_correction_requests c
+        LEFT JOIN clinical_records cr ON cr.id = c.clinical_record_id
+        LEFT JOIN patient_profiles p ON p.id = c.patient_id
+        LEFT JOIN users u_pat ON u_pat.id = p.user_id
+        LEFT JOIN users u_req ON u_req.id = c.requested_by
+        {where_sql}
+        ORDER BY c.created_at DESC
+    """
+
+    with get_db() as conn:
+        rows = conn.execute(query, tuple(params)).fetchall()
+
+    corrections = []
+    for r in rows:
+        corrections.append({
+            "id": f"corr_{r['id']}",
+            "recordId": f"rec_{r['clinical_record_id']}",
+            "recordTitle": r.get("record_title") or r.get("actual_record_title") or "Medical Record",
+            "reason": r["reason"] or "",
+            "proposed": r.get("proposed_text"),
+            "proposedCorrection": r.get("proposed_correction"),
+            "correctionStatus": r["status"],
+            "createdAt": _format_iso(r["created_at"]),
+            "reviewedAt": _format_iso(r.get("reviewed_at")),
+            "reviewNotes": r.get("review_notes"),
+            "patientId": f"pat_{r['pat_profile_id']}" if r.get("pat_profile_id") else None,
+            "patientName": r.get("patient_name") or "Patient",
+            "patientMediclaimId": format_mediclaim_id(r["patient_mediclaim_id"]) if r.get("patient_mediclaim_id") else None,
+            "requestedByName": r.get("requester_name") or "Patient",
+        })
+    return corrections
+
+
+def list_admin_corrections(
+    status_filter: Optional[str] = None,
+    patient_mediclaim_id: Optional[str] = None
+) -> List[Dict[str, Any]]:
+    return list_doctor_corrections(None, status_filter=status_filter, patient_mediclaim_id=patient_mediclaim_id)
 
 
 def get_correction_by_id(correction_id: str, patient_profile_id: Optional[str] = None) -> Dict[str, Any]:

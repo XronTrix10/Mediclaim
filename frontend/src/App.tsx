@@ -15,6 +15,7 @@ import AdminPatients from './pages/admin/AdminPatients'
 import AdminOrganizations from './pages/admin/AdminOrganizations'
 import AdminPractitioners from './pages/admin/AdminPractitioners'
 import AdminEmergencyEvents from './pages/admin/AdminEmergencyEvents'
+import AdminCorrections from './pages/admin/AdminCorrections'
 
 // Doctor pages
 import DoctorLayout from './pages/doctor/DoctorLayout'
@@ -74,6 +75,7 @@ export default function App() {
         <Route path="organizations" element={<AdminOrganizations />} />
         <Route path="practitioners" element={<AdminPractitioners />} />
         <Route path="emergency" element={<AdminEmergencyEvents />} />
+        <Route path="corrections" element={<AdminCorrections />} />
       </Route>
 
       <Route path="*" element={<Navigate to="/" replace />} />

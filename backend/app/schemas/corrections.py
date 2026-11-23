@@ -26,6 +26,10 @@ class CorrectionRequest(BaseModel):
     createdAt: str
     reviewedAt: Optional[str] = None
     reviewNotes: Optional[str] = None
+    patientId: Optional[str] = None
+    patientName: Optional[str] = None
+    patientMediclaimId: Optional[str] = None
+    requestedByName: Optional[str] = None
 
 class CorrectionRequestsResponse(BaseModel):
     status: str = "success"

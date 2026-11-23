@@ -4,9 +4,10 @@ import Icon from '../../components/Icon'
 import PageHeader from '../../components/PageHeader'
 import Modal from '../../components/Modal'
 import AuthenticatedFilePreview from '../../components/AuthenticatedFilePreview'
-import { card, button, chip, emptyBox } from '../../lib/ui'
+import { card, button, chip, emptyBox, textarea } from '../../lib/ui'
 import { getAuthorizedRecords, type PatientDocument } from '../../api/doctor'
-import type { HealthEvent } from '../../types'
+import { correctionsApi } from '../../api/corrections'
+import type { HealthEvent, CorrectionRequest } from '../../types'
 import AddPatientRecordModal from '../../components/doctor/AddPatientRecordModal'
 
 function formatDate(iso?: string) {
@@ -31,7 +32,7 @@ export function isBirthCertificate(title?: string, fileName?: string, docType?: 
   return false
 }
 
-type RecordKind = 'all' | 'documents' | 'vaccination' | 'condition' | 'medication' | 'allergy' | 'report'
+type RecordKind = 'all' | 'documents' | 'vaccination' | 'condition' | 'medication' | 'allergy' | 'report' | 'corrections'
 
 const KIND_LABELS: Record<string, string> = {
   all: 'All Records',
@@ -41,6 +42,7 @@ const KIND_LABELS: Record<string, string> = {
   medication: 'Medications',
   allergy: 'Allergies',
   report: 'Reports',
+  corrections: 'Corrections',
 }
 
 const KIND_ICON: Record<string, string> = {
@@ -50,6 +52,7 @@ const KIND_ICON: Record<string, string> = {
   medication: 'pill',
   allergy: 'alert',
   report: 'file',
+  corrections: 'check',
 }
 
 interface PreviewItem {
@@ -218,6 +221,7 @@ export default function DoctorPatientDetail() {
     records: HealthEvent[]
     documents?: PatientDocument[]
   } | null>(null)
+  const [corrections, setCorrections] = useState<CorrectionRequest[]>([])
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState<string | null>(null)
   const [filterKind, setFilterKind] = useState<RecordKind>('all')
@@ -225,16 +229,44 @@ export default function DoctorPatientDetail() {
   const [addKind, setAddKind] = useState<RecordKind>('vaccination')
   const [previewItem, setPreviewItem] = useState<PreviewItem | null>(null)
 
+  const [reviewingCorrection, setReviewingCorrection] = useState<CorrectionRequest | null>(null)
+  const [reviewNotes, setReviewNotes] = useState('')
+  const [submittingReview, setSubmittingReview] = useState(false)
+
   function load() {
     if (!mediclaimId) return
     setLoading(true)
-    getAuthorizedRecords(mediclaimId)
-      .then(setData)
+    Promise.all([
+      getAuthorizedRecords(mediclaimId),
+      correctionsApi.getCorrections({ patientMediclaimId: mediclaimId }).catch(() => [] as CorrectionRequest[]),
+    ])
+      .then(([resData, corrData]) => {
+        setData(resData)
+        setCorrections(corrData)
+      })
       .catch(() => setError('Failed to load patient records. You may not have access.'))
       .finally(() => setLoading(false))
   }
 
   useEffect(() => { load() }, [mediclaimId])
+
+  async function handleReviewCorrection(status: 'approved' | 'rejected') {
+    if (!reviewingCorrection) return
+    setSubmittingReview(true)
+    try {
+      await correctionsApi.reviewCorrection(reviewingCorrection.id, {
+        status,
+        reviewNotes: reviewNotes.trim() || undefined,
+      })
+      setReviewingCorrection(null)
+      setReviewNotes('')
+      load()
+    } catch {
+      alert('Failed to submit review. Please try again.')
+    } finally {
+      setSubmittingReview(false)
+    }
+  }
 
   const approvedScopes = (data?.approvedScopes ?? []).map((s) => s.toLowerCase())
   const hasDocumentScope = approvedScopes.includes('all') || approvedScopes.includes('document') || approvedScopes.includes('documents')
@@ -258,17 +290,19 @@ export default function DoctorPatientDetail() {
     : 0
 
   const availableChips: RecordKind[] = hasDocumentScope
-    ? ['all', 'documents', 'vaccination', 'condition', 'medication', 'allergy', 'report']
-    : ['all', 'vaccination', 'condition', 'medication', 'allergy', 'report']
+    ? ['all', 'documents', 'vaccination', 'condition', 'medication', 'allergy', 'report', 'corrections']
+    : ['all', 'vaccination', 'condition', 'medication', 'allergy', 'report', 'corrections']
+
+  const pendingCorrections = corrections.filter((c) => c.status === 'under_review')
 
   const filteredRecords = filterKind === 'all'
     ? records
-    : filterKind === 'documents'
+    : filterKind === 'documents' || filterKind === 'corrections'
     ? []
     : records.filter((r) => r.kind === filterKind)
 
   function openAdd(kind: RecordKind) {
-    setAddKind(kind === 'all' || kind === 'documents' ? 'vaccination' : kind)
+    setAddKind(kind === 'all' || kind === 'documents' || kind === 'corrections' ? 'vaccination' : kind)
     setAddModalOpen(true)
   }
 
@@ -336,6 +370,32 @@ export default function DoctorPatientDetail() {
             </div>
           </div>
 
+          {/* Pending Corrections Banner */}
+          {pendingCorrections.length > 0 && (
+            <div className="rounded-2xl border border-amber-300 bg-amber-50 p-4 text-amber-950 flex flex-wrap items-center justify-between gap-3">
+              <div className="flex items-center gap-3">
+                <span className="grid size-8 place-items-center rounded-lg bg-amber-600 text-white shrink-0">
+                  <Icon name="alert" size={16} />
+                </span>
+                <div>
+                  <strong className="block text-sm font-semibold">
+                    {pendingCorrections.length} Correction Request{pendingCorrections.length > 1 ? 's' : ''} Pending Review
+                  </strong>
+                  <span className="text-xs text-amber-900">
+                    The patient requested clinical amendments to their medical history.
+                  </span>
+                </div>
+              </div>
+              <button
+                type="button"
+                onClick={() => setFilterKind('corrections')}
+                className="rounded-xl bg-amber-600 px-3.5 py-1.5 text-xs font-semibold text-white hover:bg-amber-700 transition cursor-pointer"
+              >
+                Review Requests ({pendingCorrections.length})
+              </button>
+            </div>
+          )}
+
           {/* Quick Documents Banner if files exist and document scope was granted */}
           {hasDocumentScope && documents.length > 0 && filterKind !== 'documents' && (
             <div className="rounded-[20px] border border-brand/20 bg-brand-tint/30 p-5">
@@ -386,7 +446,7 @@ export default function DoctorPatientDetail() {
           <div className={card}>
             <div className="mb-5 flex flex-wrap items-center justify-between gap-3">
               <h2 className="text-[1.1rem] font-semibold text-ink">
-                {filterKind === 'documents' ? 'Medical Documents & Scans' : 'Clinical Records'}
+                {filterKind === 'documents' ? 'Medical Documents & Scans' : filterKind === 'corrections' ? 'Patient Correction Requests' : 'Clinical Records'}
               </h2>
               <div className="flex flex-wrap gap-2">
                 {availableChips.map((k) => (
@@ -394,15 +454,78 @@ export default function DoctorPatientDetail() {
                     key={k}
                     kind={k}
                     selected={filterKind === k}
-                    count={k === 'documents' ? totalDocsCount : undefined}
+                    count={k === 'documents' ? totalDocsCount : k === 'corrections' ? corrections.length : undefined}
                     onClick={() => setFilterKind(k)}
                   />
                 ))}
               </div>
             </div>
 
-            {/* If documents filter is active */}
-            {filterKind === 'documents' ? (
+            {/* If corrections filter is active */}
+            {filterKind === 'corrections' ? (
+              corrections.length === 0 ? (
+                <div className={emptyBox}>
+                  <Icon name="check" size={28} className="mx-auto text-ink-faint" />
+                  <p className="mt-2 text-sm text-ink-soft">No correction requests submitted for this patient.</p>
+                </div>
+              ) : (
+                <div className="divide-y divide-line">
+                  {corrections.map((corr) => {
+                    const isPending = corr.status === 'under_review'
+                    return (
+                      <div key={corr.id} className="py-4 flex flex-col sm:flex-row sm:items-start justify-between gap-4">
+                        <div className="flex gap-3.5 min-w-0">
+                          <span className="mt-0.5 grid size-9 shrink-0 place-items-center rounded-xl bg-brand-tint text-brand">
+                            <Icon name="file" size={18} />
+                          </span>
+                          <div className="min-w-0 text-xs">
+                            <div className="flex flex-wrap items-center gap-2">
+                              <strong className="text-sm font-semibold text-ink">{corr.recordTitle}</strong>
+                              <span className={`rounded-full px-2 py-0.5 text-[10px] font-bold uppercase ${
+                                corr.status === 'under_review' ? 'bg-[#fff3cd] text-[#856404]' : corr.status === 'approved' ? 'bg-brand-tint text-brand-deep' : 'bg-allergy-tint text-allergy-ink'
+                              }`}>
+                                {corr.status.replace('_', ' ')}
+                              </span>
+                              <span className="text-ink-faint">Submitted {formatDate(corr.createdAt)}</span>
+                            </div>
+                            <p className="mt-1.5 text-ink bg-mist/60 rounded-xl p-2.5">
+                              <strong className="text-ink-soft block mb-0.5">Patient Reason:</strong>
+                              "{corr.reason}"
+                            </p>
+                            {corr.proposed && (
+                              <p className="mt-1 text-brand-deep bg-brand-tint/30 rounded-xl p-2.5 border border-brand/10">
+                                <strong className="text-brand block mb-0.5">Proposed Correction:</strong>
+                                {corr.proposed}
+                              </p>
+                            )}
+                            {corr.reviewNotes && (
+                              <p className="mt-1 text-ink-soft italic">
+                                Reviewer notes: {corr.reviewNotes}
+                              </p>
+                            )}
+                          </div>
+                        </div>
+                        {isPending && (
+                          <div className="shrink-0">
+                            <button
+                              type="button"
+                              onClick={() => {
+                                setReviewingCorrection(corr)
+                                setReviewNotes('')
+                              }}
+                              className={`${button('soft', 'sm')} gap-1.5 text-xs cursor-pointer`}
+                            >
+                              <Icon name="check" size={14} />
+                              Review & Decide
+                            </button>
+                          </div>
+                        )}
+                      </div>
+                    )
+                  })}
+                </div>
+              )
+            ) : filterKind === 'documents' ? (
               !hasDocumentScope ? (
                 <div className={emptyBox}>
                   <Icon name="lock" size={32} className="mx-auto text-ink-faint" />
@@ -543,10 +666,67 @@ export default function DoctorPatientDetail() {
         </Modal>
       )}
 
+      {/* Review Correction Modal */}
+      {reviewingCorrection && (
+        <Modal
+          open={!!reviewingCorrection}
+          onClose={() => setReviewingCorrection(null)}
+          title="Review Patient Correction"
+          description={`Clinical review for ${reviewingCorrection.recordTitle}`}
+        >
+          <div className="space-y-4 text-sm text-ink pt-2">
+            <div className="rounded-xl bg-mist p-3 text-xs">
+              <span className="font-semibold text-ink-soft block mb-1">Patient Reason:</span>
+              <p className="text-ink">{reviewingCorrection.reason}</p>
+            </div>
+
+            {reviewingCorrection.proposed && (
+              <div className="rounded-xl bg-brand-tint/40 border border-brand/20 p-3 text-xs">
+                <span className="font-semibold text-brand-deep block mb-1">Proposed Correction:</span>
+                <p className="text-brand-deep font-mono">{reviewingCorrection.proposed}</p>
+              </div>
+            )}
+
+            <div>
+              <label htmlFor="doc-rev-notes" className="text-xs font-semibold text-ink mb-1 block">
+                Clinical Review Notes (Optional)
+              </label>
+              <textarea
+                id="doc-rev-notes"
+                className={textarea}
+                rows={3}
+                placeholder="Enter justification or medical documentation reference..."
+                value={reviewNotes}
+                onChange={(e) => setReviewNotes(e.target.value)}
+              />
+            </div>
+
+            <div className="flex flex-wrap gap-2.5 pt-3 border-t border-line justify-end">
+              <button
+                type="button"
+                onClick={() => handleReviewCorrection('rejected')}
+                disabled={submittingReview}
+                className="rounded-xl border border-allergy-line bg-allergy-tint px-4 py-2 text-xs font-bold text-allergy-ink hover:bg-allergy-tint/80 transition cursor-pointer"
+              >
+                Reject Request
+              </button>
+              <button
+                type="button"
+                onClick={() => handleReviewCorrection('approved')}
+                disabled={submittingReview}
+                className="rounded-xl bg-brand px-4 py-2 text-xs font-bold text-white hover:bg-brand-deep transition shadow-xs cursor-pointer"
+              >
+                Approve & Update Record
+              </button>
+            </div>
+          </div>
+        </Modal>
+      )}
+
       {addModalOpen && mediclaimId && (
         <AddPatientRecordModal
           mediclaimId={mediclaimId}
-          initialKind={addKind === 'all' || addKind === 'documents' ? 'vaccination' : addKind}
+          initialKind={addKind === 'all' || addKind === 'documents' || addKind === 'corrections' ? 'vaccination' : (addKind as any)}
           onClose={() => setAddModalOpen(false)}
           onAdded={() => { setAddModalOpen(false); load() }}
         />
